@@ -65,7 +65,7 @@ lands far harder as an answer to "how is this not annoying" than as part of the 
 > ```
 > npm i opencode-token-norm
 > ```
-> Add to `plugin` in opencode.json. Off switches if you hate it: `TOKEN_NORM_BUDGET=0` / `TOKEN_NORM_HANDOFF=0`
+> Add to `plugin` in opencode.json. Either half turns off on its own: `TOKEN_NORM_BUDGET=0` / `TOKEN_NORM_HANDOFF=0`
 >
 > https://github.com/salitaba/opencode-token-norm
 >
