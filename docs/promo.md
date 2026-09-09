@@ -12,7 +12,7 @@ Reference copy for announcing `opencode-token-norm`. Not shipped in the npm tarb
 | Release | https://github.com/salitaba/opencode-token-norm/releases/tag/v0.1.0 | tagged |
 | opencode ecosystem PR | https://github.com/anomalyco/opencode/pull/48182 | open, awaiting review |
 | awesome-opencode PR | https://github.com/awesome-opencode/awesome-opencode/pull/693 | open, awaiting review |
-| Discord showcase | https://opencode.ai/discord | copy below, unposted |
+| Discord `#community-projects` | https://opencode.ai/discord | posted |
 | Reddit / X / HN | — | copy below, unposted |
 
 ## Positioning
