@@ -1,0 +1,53 @@
+{
+  "name": "opencode-token-norm",
+  "version": "0.1.0",
+  "description": "Enforces a token budget in OpenCode: counts tool calls, staples un-skippable reminders at thresholds, runs the usage audit for you, and makes the session split a single tool call",
+  "type": "module",
+  "license": "MIT",
+  "author": "salitaba",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/salitaba/opencode-token-norm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/salitaba/opencode-token-norm/issues"
+  },
+  "homepage": "https://github.com/salitaba/opencode-token-norm#readme",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "tokens",
+    "cost",
+    "context",
+    "budget",
+    "handoff",
+    "session"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "scripts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.15.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.2",
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
