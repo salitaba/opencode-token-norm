@@ -50,6 +50,12 @@ knows and continues anyway), not autobiography. Bullets end in consequences, sec
 person. No preemptive bug confession — the 61-reminders story below is reply ammo, and
 lands far harder as an answer to "how is this not annoying" than as part of the pitch.
 
+Keep the unhappy path out of the pitch entirely. No off switches, no caveats, no
+"in case you don't like it". Raising an objection nobody made plants the doubt it
+answers. Uninstall instructions, env vars, and limitations belong in the README, where
+someone who already wants the thing goes looking. Same reason the bug story is held
+back: the pitch sells the happy path, replies handle everything else.
+
 > **opencode-token-norm**
 >
 > Your agent already knows it's burning your context. Mine told me: ran the audit, reported the bloat, then kept right on going for another 90k tokens.
@@ -65,7 +71,7 @@ lands far harder as an answer to "how is this not annoying" than as part of the 
 > ```
 > npm i opencode-token-norm
 > ```
-> Add to `plugin` in opencode.json. Either half turns off on its own: `TOKEN_NORM_BUDGET=0` / `TOKEN_NORM_HANDOFF=0`
+> Add to `plugin` in opencode.json.
 >
 > https://github.com/salitaba/opencode-token-norm
 >
