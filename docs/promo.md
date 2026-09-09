@@ -34,24 +34,51 @@ Three concrete hooks, all backed by real sessions:
   compared a call count instead of message identity. Reminders that repeat become
   wallpaper and the agent learns to skip all system-reminders. Now deduped on message id.
 
-## Discord showcase (#showcase)
+## Discord post (#community-projects)
 
-> **opencode-token-norm** — token budget enforcement that doesn't rely on the agent remembering it
+Post in `#community-projects` — the dedicated share channel. Not `#general` (buried),
+not `#dev` / `#experimental` (core development), not `#agents` (agent config).
+`#announcements` and `#releases` are maintainer-only broadcast. Read `#rules` first for
+a self-promo or membership-age gate. Do not cross-post; that reads as spam.
+
+Discord caps messages at 2000 characters. The copy below is ~1050. Paste verbatim,
+dropping the `> ` quote markers (they are markdown quoting here, not part of the post).
+Keep the URL last so the link preview renders at the bottom.
+
+Writing notes, in case this needs a rewrite: lead with the paradox (the agent already
+knows and continues anyway), not autobiography. Bullets end in consequences, second
+person. No preemptive bug confession — the 61-reminders story below is reply ammo, and
+lands far harder as an answer to "how is this not annoying" than as part of the pitch.
+
+> **opencode-token-norm**
 >
-> I had a rule in my AGENTS.md: state expected cost before a big task, split at phase boundaries, run the audit. It was in context every single session. Then I watched a 184-call, 3.0M effective-token session go by with the norm sitting right there, unread.
+> Your agent already knows it's burning your context. Mine told me: ran the audit, reported the bloat, then kept right on going for another 90k tokens.
 >
-> The failure that convinced me to write code instead of more prose: at 195k deep the agent *did* run the audit, *did* report 77x cache and bloat HIGH — and continued anyway, because a "do everything" override I gave for task 1 had silently carried into task 2.
+> Knowing isn't stopping. Rules in AGENTS.md are knowing. This is stopping.
 >
-> So the plugin does the parts an instruction can't:
-> - counts tool calls, then staples a `<system-reminder>` onto tool output at the threshold — the check arrives whether or not the agent is curious about cost
-> - runs the usage audit itself and injects the numbers. "Run this and report it" is advice, and advice at a checkpoint loses to the task in flight
-> - overrides expire with the task that granted them. New request naming new files = new task = override gone
-> - bundles a `handoff` tool as the escape hatch the reminders point at: note written to disk first, then a fresh session opens with it pre-filled (not auto-submitted unless you ask)
+> What it does:
+> - watches your tool calls and interrupts the agent when you cross a budget — it can't miss the reminder, it arrives attached to the output it's already reading
+> - pulls the real usage numbers itself, so the checkpoint isn't "agent, please go look"
+> - expires "just do everything" when that task ends, so a blank cheque you wrote an hour ago can't fund the next three tasks
+> - `handoff` tool for when you should start over: dumps state to disk, opens a clean session pre-filled, you keep the conclusions and bin the 80k of tool spam that produced them
 >
-> One bug worth confessing since it shaped the design: an early version fired the boundary reminder **61 times for one user message** — dedupe compared a call count instead of message identity. Reminders that repeat become wallpaper and the agent starts skipping *all* system-reminders. Deduped on message id now.
+> ```
+> npm i opencode-token-norm
+> ```
+> Add to `plugin` in opencode.json. Off switches if you hate it: `TOKEN_NORM_BUDGET=0` / `TOKEN_NORM_HANDOFF=0`
 >
-> `npm i opencode-token-norm`, add it to `plugin` in opencode.json. Kill switches `TOKEN_NORM_BUDGET=0` / `TOKEN_NORM_HANDOFF=0`.
 > https://github.com/salitaba/opencode-token-norm
+>
+> Genuinely curious whether the stale-override thing bites anyone else, or if I'm the only one handing out blank cheques.
+
+### Held back for replies
+
+Use when someone asks how the reminders avoid becoming noise:
+
+> An early version fired the boundary reminder 61 times for one user message — the dedupe
+> compared a call count instead of message identity. Repeated reminders become wallpaper,
+> and worse, the agent generalizes and starts skipping *every* system-reminder. Deduped on
+> message id now.
 
 ## Reddit self-post (r/LocalLLaMA, r/ChatGPTCoding)
 
