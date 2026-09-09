@@ -56,6 +56,10 @@ answers. Uninstall instructions, env vars, and limitations belong in the README,
 someone who already wants the thing goes looking. Same reason the bug story is held
 back: the pitch sells the happy path, replies handle everything else.
 
+End on the link. No closing question fishing for replies — it reads as soliciting, and
+a coined term in the last line ("the stale-override thing") lands on readers who skimmed
+the bullets and never met the term. The bullets carry the argument; let them.
+
 > **opencode-token-norm**
 >
 > Your agent already knows it's burning your context. Mine told me: ran the audit, reported the bloat, then kept right on going for another 90k tokens.
@@ -74,8 +78,6 @@ back: the pitch sells the happy path, replies handle everything else.
 > Add to `plugin` in opencode.json.
 >
 > https://github.com/salitaba/opencode-token-norm
->
-> Genuinely curious whether the stale-override thing bites anyone else, or if I'm the only one handing out blank cheques.
 
 ### Held back for replies
 
