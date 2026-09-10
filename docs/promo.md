@@ -90,7 +90,15 @@ Use when someone asks how the reminders avoid becoming noise:
 
 ## Reddit self-post (r/LocalLLaMA, r/ChatGPTCoding)
 
-**Title:** I put my "watch your token budget" instructions in the system prompt for weeks. The agent ignored them. So I made them fire on their own.
+r/LocalLLaMA gates on *subreddit* karma (0 karma = blocked); earn it by commenting
+there for a couple of weeks before posting. r/ChatGPTCoding allows this under rule 6
+(rule 5 routes AI coding projects to it), but rule 6 demands problem + comparison
+*with numbers* + what you did including what didn't work. Flair must be
+`Resource and Tips` — rule 6 names it explicitly. The comparison section below exists
+to satisfy that rule; do not drop it. Conceding the handoff half to the incumbents is
+load-bearing, not modesty: it also pre-empts the "this already exists" top comment.
+
+**Title:** My agent ran its own token audit, reported "bloat HIGH" at 195k tokens, and kept going anyway — so I stopped asking it nicely
 
 I write agent instructions for a living lately, and I had a token-discipline norm loaded in every session: size the task first, state the expected cost, split at phase boundaries, run the audit on long jobs.
 
@@ -110,7 +118,11 @@ So I wrote a plugin that does the parts prose can't do:
 - Cheap tools (todo, question, skill) don't count toward the budget, so bookkeeping doesn't trip the alarm.
 - A bundled `handoff` tool for the escape hatch: write the note to disk *first*, then open a fresh session with the note pre-filled. Findings are small and survive a handoff; the 80k of tool output that produced them does not.
 
-One bug from development that's a general lesson: an early version fired the boundary reminder **61 times for a single user message** — the dedupe compared a call count instead of message identity. Repeated reminders become wallpaper, and worse, the agent generalizes and starts ignoring *every* system-reminder. If you inject anything into an agent's context, dedupe on message identity, not on a counter.
+**Closest existing solutions.** Two opencode handoff plugins already ship: `opencode-handoff` (0.5.0) and `opencode-session-handoff` (1.1.6). They cover session switching well and overlap maybe 70% of the handoff half of mine. I don't beat them at it — if handoff is all you want, use theirs, they've been at it longer.
+
+What I couldn't find an equivalent for is enforcement. Every option I looked at, including my own prose norm, is something the agent has to *choose* to consult. Numbers from the session that made me stop writing prose: 184 tool calls, 3.0M effective tokens, 77x cache ratio, the norm in context for every one of those calls. The default threshold here fires at 25 calls and re-fires every 60 — that same session would have been interrupted 7 times before reaching the point where the agent audited itself and shrugged.
+
+**What didn't work.** Sharper prose was the first thing I tried, and it changed nothing — a stronger instruction is still an instruction, and it still loses to the task in flight. The second dead end was a bug I shipped. An early version fired the boundary reminder **61 times for a single user message**, because the dedupe compared a call count instead of message identity. That's worse than it sounds: repeated reminders become wallpaper, and the agent generalizes from "this one is noise" to ignoring the entire `system-reminder` channel — including the ones that matter. If you inject anything into an agent's context, dedupe on message identity, not on a counter, and treat your injection budget as finite.
 
 It's for opencode: `npm i opencode-token-norm`. MIT.
 https://github.com/salitaba/opencode-token-norm
