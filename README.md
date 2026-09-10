@@ -79,6 +79,26 @@ $ tail ~/.local/share/opencode/token-norm.log
 2026-09-10T11:47:02.913Z ses_f75afcd6 announce-threshold at 25 calls (bash 14, read 9, grep 4)
 ```
 
+**If it doesn't load.** On some OpenCode builds ≥ 1.17, a plugin listed by npm
+name is silently never initialized — no error, no log, no `handoff` tool — while
+the identical code works as a local plugin file
+([upstream report](https://github.com/anomalyco/opencode/issues/48379)). The
+fallback install loads this package from a local wrapper instead:
+
+```sh
+# from a clone of this repo, after `npm install && npm run build`
+npm run install:local
+
+# or, from a project that installed the package from npm
+node node_modules/opencode-token-norm/scripts/install-local.mjs
+```
+
+It writes `~/.config/opencode/plugins/opencode-token-norm.js`, which re-exports
+the build — re-run it after rebuilding. Restart OpenCode, then verify with the
+[smoke test](docs/smoke-test.md). If `opencode.json` still lists
+`opencode-token-norm` in its `plugin` array, remove it, or a runtime that fixes
+npm loading will run the plugin twice.
+
 **Turning it off needs no uninstall.** `TOKEN_NORM_BUDGET=0` disables the
 counting half; `TOKEN_NORM_HANDOFF=0` drops the `handoff` tool. Restart to apply.
 

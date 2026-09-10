@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `npm run install:local` (`scripts/install-local.mjs`): loads this package as a local OpenCode plugin. Workaround for OpenCode builds ≥ 1.17 that silently skip npm-spec plugins ([opencode#48379](https://github.com/anomalyco/opencode/issues/48379)); verified end to end on 1.18.30.
+
+### Changed
+
+- README: document the local-install fallback and the npm-spec compatibility caveat.
+
 ## [0.3.0] - 2026-09-10
 
 ### Changed

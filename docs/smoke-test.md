@@ -7,7 +7,8 @@ checklist against a real OpenCode build before a release, or after touching
 
 Use environment overrides to shrink the thresholds so nothing takes 60 calls.
 Every step assumes the build under test is the one OpenCode loads — link or
-install it first, then restart OpenCode.
+install it first (`npm run install:local` from a clone, or the equivalent wrapper
+described in the README), then restart OpenCode.
 
 ## 1. Loaded and logging
 
