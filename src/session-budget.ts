@@ -9,9 +9,10 @@
 // midway" -- were the exact two that failed in a 184-call, 3.0M effective-token
 // session where the norm was in context the whole time.
 //
-// So this plugin does not add advice. It counts, and at thresholds it staples
-// a notice onto tool output the agent is already reading. An instruction the
-// agent cannot skip past beats an instruction it merely has.
+// So this plugin does not rely on agent-authored advice as its enforcement
+// mechanism. It counts, and at thresholds it staples a notice onto tool output
+// the agent is already reading. An instruction the agent cannot skip past beats
+// an instruction it merely has.
 //
 // It never edits args and, outside opt-in `block` mode, never fails a tool
 // call: a wrong guess here must cost a few lines of text, not a broken session.

@@ -16,10 +16,11 @@ boundaries — are the two that break. Writing them better does not fix that: th
 rules that hold are the ones that do not depend on the agent choosing to follow
 them.
 
-So this plugin adds no advice. It **counts**, and at thresholds it staples the
-instruction onto tool output the agent cannot skip past. It cannot make the agent
-obey. It can put the rule directly in the agent's execution path, and that turns
-out to be most of the gap.
+So this plugin does not rely on agent-authored advice as its enforcement
+mechanism. It **counts**, and at thresholds it staples generated instructions
+onto tool output the agent cannot skip past. It cannot make the agent obey. It
+can put the rule directly in the agent's execution path, and that turns out to
+be most of the gap.
 
 The expensive failure it targets is not a long task. It is a **new** task
 inheriting an old task's context *and* an old task's permission. Dashboards and
