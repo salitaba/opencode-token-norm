@@ -7,31 +7,37 @@
 
 **Your token rules are advice. This makes them mechanical.**
 
-An [OpenCode](https://opencode.ai) plugin that counts tool calls, staples
-reminders onto tool output at thresholds, runs the token audit for the agent, and
-turns the session split into a single tool call.
+An [OpenCode](https://opencode.ai) plugin that counts your agent's tool calls,
+staples reminders onto the output it is already reading, runs the token audit on
+its behalf, and collapses the session split into one tool call.
 
 ![token-norm demo: the agent gets counted, audited, and handed off](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.gif)
 
 *Demo (18s at 2x): the plugin counts calls and staples the audit onto tool output, then the agent calls `handoff` and lands in a fresh session with the note pre-filled. [Full-speed MP4](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.mp4).*
 
 You wrote a token budget into `AGENTS.md`. It loads into every session. The agent
-reads it, agrees with it, and then runs 184 tool calls and 3.0M effective tokens
-— real dollars — on a task that should have been three sessions.
+reads it, agrees with it, and then spends 184 tool calls and 3.0M effective
+tokens — real dollars — on a task that should have been three sessions.
+([What that session actually did, call by call](https://github.com/salitaba/opencode-token-norm/blob/main/docs/post-mortem.md).)
 
-That is not a prompting failure. Rules that survive are the ones that do not
-depend on the agent choosing to follow them. This plugin does not add advice —
-it **counts**, and at thresholds it staples an instruction onto tool output the
-agent is already reading. It cannot force the agent to obey; it can make the rule
-impossible not to see.
+Writing the rule better does not fix that. The rules that hold are the ones that
+do not depend on the agent choosing to follow them, which is why "cap bash
+output" never fails — a plugin rewrites the command and nobody has to remember.
+The two rules with no mechanism are the two that break.
 
-Two halves:
+So this plugin adds no advice. It **counts**, and at thresholds it staples the
+instruction onto tool output the agent cannot skip past. It cannot make the agent
+obey. It can make the rule impossible to not see, and that turns out to be most
+of the gap.
+([Advice vs. enforcement, rule by rule](https://github.com/salitaba/opencode-token-norm/blob/main/docs/advice-vs-enforcement.md).)
 
-- **`TokenNormBudget`** — counts tool calls, staples in-band reminders onto tool
-  output at thresholds, and runs the usage audit *for* the agent so there is no
-  step to defer.
-- **`TokenNormHandoff`** — a `handoff` tool that makes the session split a single
-  tool call instead of three manual steps.
+Two halves, either one disableable:
+
+- **`TokenNormBudget`** — counts tool calls, staples in-band reminders at
+  thresholds, and runs the usage audit *for* the agent, leaving it a fact to
+  report rather than a step to defer.
+- **`TokenNormHandoff`** — a `handoff` tool that collapses the session split from
+  three manual steps into one call.
 
 ---
 
@@ -41,9 +47,9 @@ Two halves:
 opencode plugin opencode-token-norm --global
 ```
 
-Restart OpenCode. That's the whole install: the command registers the package in
-`~/.config/opencode/opencode.json`, and OpenCode caches it at startup. Prefer to
-edit config by hand? Add it to the `plugin` array instead:
+Restart OpenCode. That is the whole install — the command registers the package
+in `~/.config/opencode/opencode.json` and OpenCode caches it at startup. If you
+prefer editing config by hand, add it to the `plugin` array instead:
 
 ```json
 // ~/.config/opencode/opencode.json
@@ -53,10 +59,27 @@ edit config by hand? Add it to the `plugin` array instead:
 }
 ```
 
-Needs an OpenCode build with plugin support (`@opencode-ai/plugin` ≥ 1.15.12) and
-`python3` for the audit checkpoint — without python3 the reminder still fires and
-tells the agent to run the audit manually. To run the audit script by hand,
-`npm i opencode-token-norm` in a project (below; needs Node ≥ 22).
+Requires an OpenCode build with plugin support (`@opencode-ai/plugin` ≥ 1.15.12),
+and `python3` for the audit checkpoint. Without python3 nothing breaks: the
+reminder still fires, and tells the agent to run the audit itself. To run the
+audit by hand you also want the package installed in a project — see below;
+needs Node ≥ 22.
+
+**Check it loaded.** Nothing surfaces until call 25, so a silent install looks
+exactly like a working one. Every threshold the plugin fires is logged, so after
+a session long enough to trigger one:
+
+```sh
+tail ~/.local/share/opencode/token-norm.log
+# 2026-09-10T11:47:02.913Z ses_f75afcd6 announce-threshold at 25 calls (bash 14, read 9, grep 4)
+```
+
+An empty file after a six-call session means it is working, not missing — nothing
+crossed a threshold.
+
+**Turning it off does not require uninstalling.** `TOKEN_NORM_BUDGET=0` disables
+the counting half; `TOKEN_NORM_HANDOFF=0` drops the `handoff` tool. Both take
+effect on restart.
 
 ---
 
@@ -65,17 +88,18 @@ tells the agent to run the audit manually. To run the audit script by hand,
 ### 1. Task boundary detection (the missing enforcement)
 
 The expensive failure is not a long task. It is a **new** task inheriting an old
-task's context and an old task's permission. Usage dashboards and statuslines
-report the damage after a session ends; this interrupts the agent at the
-moment it happens.
+task's context *and* an old task's permission. Dashboards and statuslines report
+that after the session ends, when the money is gone; this interrupts the agent
+while the spend is still avoidable.
 
-Real session: 195k tokens deep, the agent had the norm in context, ran the audit,
-reported *"77x cache, bloat HIGH"* — and continued anyway. Why? A second request
-(*"now do all of them"*) was treated as a continuation of the `do everything`
-override granted for the first. Overrides are per-task. Nothing enforced that.
+A real session: 195k tokens deep, the norm in context the whole time, the agent
+ran the audit and reported *"77x cache, bloat HIGH"* — then kept going. The
+reason is not laziness. A second request (*"now do all of them"*) was read as a
+continuation of the `do everything` override granted for the first. Overrides are
+per-task; nothing enforced that.
 
-When a new user message arrives in a session already past `BOUNDARY_AT` calls
-(default 40), the next tool call carries:
+Now, when a new user message arrives in a session already past `BOUNDARY_AT`
+calls (default 40), the next tool call carries this:
 
 ```
 TOKEN NORM -- new request arrived 47 tool calls deep. This is a TASK BOUNDARY.
@@ -86,25 +110,39 @@ is always available, feels free only because this context is already warm, and i
 exact rationalization the norm exists to block.
 ```
 
-That last line matters. Every agent talks itself past a split with *"reloading
-cold costs more than finishing here."* It is always available and almost always
-wrong — the marginal call feels free precisely because the context is warm.
+That last paragraph is the load-bearing one. Every agent talks itself past a
+split with some version of *"reloading cold costs more than finishing here."* The
+argument is always available and almost always wrong: the marginal call feels
+free precisely because the context is already warm.
 
-### 2. Cost statement at 25 calls
+The reminder fires **once per user message**, keyed on message identity — not a
+detail. `message.updated` fires many times for the same message, and an early
+build keyed on call count instead, which went stale after one tool call and
+re-armed: 61 copies of this warning in a single session. That is worse than
+silence. A warning on every tool call becomes wallpaper, and the agent learns to
+skip *every* system-reminder, audit included. Cry wolf once per wolf.
 
-The norm wants a cost statement **before** a big task. In practice the agent only
-learns the true size once it is underway. So this fires at the first moment the
-task is provably big and puts the statement in front of the agent then: remaining
-calls, caps in effect, and which part could ship now behind a handoff.
+### 2. Cost statement at 25 calls — **once per session**
+
+The norm wants the cost statement **before** a big task starts. The agent cannot
+give one then; it does not know the size yet. So the plugin waits for the first
+moment the task is provably big and demands the statement there: calls remaining
+and what will drive them, the caps now in effect, and which slice could ship
+immediately behind a handoff.
+
+Once per session, not once per threshold. The statement exists to change the
+plan, and the plan only changes once.
 
 ### 3. Audit checkpoint every 60 calls — **already run**
 
 "Run this command and report the number" is advice, and advice at a checkpoint
 loses to the task in flight every time. One session was told to audit at call 79,
-kept working, and produced the number only when the user asked afterwards.
+kept working, and produced the number only when the user thought to ask — long
+after the spend it was meant to prevent.
 
-So the plugin runs it. The command is cheap, deterministic, and opens OpenCode's
-sqlite DB **read-only**. The agent gets the result stapled to its tool output:
+So the plugin runs the audit itself. The command is cheap, deterministic, and
+opens OpenCode's sqlite DB **read-only**. The result arrives stapled to output
+the agent is already reading:
 
 ```
 TOKEN NORM -- 60 tool calls. Audit checkpoint (ran for you):
@@ -119,20 +157,21 @@ In your NEXT message, before continuing the task: report the effective-token
 number and the cache multiplier to the user, and say whether you are splitting.
 ```
 
-No step to defer. Only a fact to report. (`calls` in the audit counts model
-turns; the 60 above counts tool calls.)
+No step left to defer — only a fact to report. (`calls` in the audit counts model
+turns; the 60 in the header counts tool calls.)
 
 ### 4. Compaction context
 
-Compaction is the one moment the agent provably re-reads its own rules. The
-plugin injects the call count there, because *"you are 180 calls deep"* changes
-behavior and *"be frugal"* does not.
+Compaction is the one moment an agent provably re-reads its own rules, so the
+plugin injects the call count into it. *"You are 180 calls deep"* changes
+behavior. *"Be frugal"* does not.
 
 ### 5. The `handoff` tool
 
-The norm says split at phase boundaries. It does not happen, because splitting
-means leaving the TUI, opening a new session, and re-typing context by hand —
-three manual steps at exactly the moment the warm session feels cheapest to continue.
+The norm says split at phase boundaries. It rarely happens, because splitting
+means leaving the TUI, opening a new session, and re-typing the context by hand —
+three manual steps demanded at exactly the moment the warm session feels cheapest
+to continue. The rule loses to friction, not to disagreement.
 
 One tool call instead:
 
@@ -145,45 +184,56 @@ handoff({
 })
 ```
 
-The plugin writes the note to disk, opens a new TUI session, and pre-fills the
+The plugin writes the note to disk, opens a new TUI session, and pre-fills its
 prompt. You press enter.
 
 **Design decisions worth knowing:**
 
-- **Not auto-submitted by default.** An auto-submitted handoff starts burning
-  tokens on a task you may have wanted to redirect — and the beat before enter
-  is the entire point of splitting. Pass `submit: true` for unattended work.
-- **Persisted before the TUI switch.** If the switch fails, the note still exists
-  on disk. The reverse ordering loses it on exactly the failure that matters.
-- **Refused for subagents.** Plugin tools register for every agent. A subagent
-  calling `handoff` would hijack your screen mid-task. Subagent status is resolved
-  from the live agent list, so agents you add later classify correctly. If that
-  lookup fails, it allows the call rather than stranding a primary agent.
+- **Not auto-submitted by default.** An auto-submitted handoff immediately starts
+  spending on a task you might have wanted to redirect, and that beat before
+  enter is the entire point of splitting. Pass `submit: true` for genuinely
+  unattended work.
+- **Persisted before the TUI switch.** If the switch fails, the note is already
+  on disk. The reverse ordering loses it on precisely the failure that matters.
+- **Refused for subagents.** Plugin tools register for every agent, so a subagent
+  could otherwise hijack your screen mid-task to split work you never asked to
+  split. Subagent status is resolved from the live agent list, so agents you add
+  later classify correctly without touching this plugin. If that lookup fails it
+  allows the call — a false block would strand the primary agent with no way out.
 - **Structured args, not a freeform summary.** `task`/`done`/`next`/`files`/`notes`
-  keep the note to real paths and verified identifiers — the next session cannot
-  see the scrollback.
+  force real paths and verified identifiers into the note. The next session cannot
+  see your scrollback, and a vague handoff makes it re-derive everything you just
+  paid for.
+- **The tool result says STOP.** It closes with an instruction not to continue,
+  not to make further tool calls, and not to summarize beyond one line. Without
+  it the agent helpfully keeps working in the session it just declared over —
+  spending the exact context the handoff existed to discard.
 
 ---
 
 ## Safety
 
-- The budget half never denies or edits a tool call. The audit checkpoint runs
-  synchronously and can stall OpenCode's event loop for up to 20s on a slow DB,
-  so it may briefly delay a tool result; a wrong threshold guess costs a few lines
-  of text, not a broken session.
-- The audit opens OpenCode's session DB (`$XDG_DATA_HOME/opencode` or
-  `~/.local/share/opencode`) **read-only** and never writes.
-- No network calls. No telemetry. Nothing leaves your machine.
-- Handoff notes are written to `~/.local/share/opencode/handoff/` (follows
-  `XDG_DATA_HOME`; override with `TOKEN_NORM_HANDOFF_DIR`).
+- **It never blocks.** The budget half does not deny a tool call, edit its
+  arguments, or fail one. A wrong threshold guess costs you a few lines of text,
+  never a broken session.
+- **One caveat, stated plainly.** The audit checkpoint runs synchronously and can
+  stall OpenCode's event loop for up to 20s on a slow database, so it may briefly
+  delay a tool result at the checkpoint.
+- **Read-only.** The audit opens OpenCode's session DB (`$XDG_DATA_HOME/opencode`
+  or `~/.local/share/opencode`) in read-only mode and never writes to it.
+- **Nothing leaves your machine.** No network calls, no telemetry. Handoff notes
+  are written to `~/.local/share/opencode/handoff/` (follows `XDG_DATA_HOME`;
+  override with `TOKEN_NORM_HANDOFF_DIR`).
 
 ---
 
 ## Configuration
 
-All optional, all environment variables. The five that matter most:
-`TOKEN_NORM_ANNOUNCE_AT`, `TOKEN_NORM_AUDIT_EVERY`, `TOKEN_NORM_BOUNDARY_AT`,
-and `TOKEN_NORM_BUDGET` / `TOKEN_NORM_HANDOFF` to switch either half off.
+All optional, all environment variables, and the defaults are the ones the
+sessions above argued for. Three thresholds — `TOKEN_NORM_ANNOUNCE_AT`,
+`TOKEN_NORM_AUDIT_EVERY`, `TOKEN_NORM_BOUNDARY_AT` — plus two kill switches,
+`TOKEN_NORM_BUDGET` and `TOKEN_NORM_HANDOFF`. The rest are paths you will
+probably never touch.
 
 <details>
 <summary>All options</summary>
@@ -204,42 +254,64 @@ and `TOKEN_NORM_BUDGET` / `TOKEN_NORM_HANDOFF` to switch either half off.
 
 </details>
 
-`~/.local/share` in the defaults follows `XDG_DATA_HOME` when set.
+Every `~/.local/share` above follows `XDG_DATA_HOME` when it is set.
 
-The default cheap set is `todowrite`, `question`, and `skill` — planning and
-asking should not burn the budget. Reads and greps still count, because context
-is what you are paying for; if you would rather not count them either, set
-`TOKEN_NORM_CHEAP_TOOLS=todowrite,question,skill,read,grep,glob` (the variable
-replaces the default set, it does not extend it).
+The cheap set defaults to `todowrite`, `question`, and `skill`: planning and
+asking should never burn the budget, since both usually *save* calls. Reads and
+greps do count, because context is the thing you are paying for. To exempt them
+anyway:
+
+```sh
+TOKEN_NORM_CHEAP_TOOLS=todowrite,question,skill,read,grep,glob
+```
+
+The variable replaces the default set rather than extending it, so list every
+tool you want exempt.
 
 ---
 
 ## Run the audit yourself
 
-The audit script ships inside the package. In a project where you installed it
-(`npm i opencode-token-norm`), run it from that project root:
+The audit script ships inside the package, and reads the same DB the plugin does.
+In a project where you installed it (`npm i opencode-token-norm`), run it from
+that project root:
 
 ```bash
-python3 node_modules/opencode-token-norm/scripts/usage-audit.py --last
-python3 node_modules/opencode-token-norm/scripts/usage-audit.py --receipt
-python3 node_modules/opencode-token-norm/scripts/usage-audit.py --receipt <session-id>
-python3 node_modules/opencode-token-norm/scripts/usage-audit.py --top 5
-python3 node_modules/opencode-token-norm/scripts/usage-audit.py --top 5 --json
+A=node_modules/opencode-token-norm/scripts/usage-audit.py
+
+python3 $A --last                  # most recently updated session
+python3 $A --session <session-id>  # one specific session (what the plugin runs)
+python3 $A --top 5                 # rank the 5 most recent by effective tokens
+python3 $A --receipt               # shareable snapshot, most recent session
+python3 $A --receipt <session-id>  # ...or a named one
 ```
 
-`effective fresh tokens = input + 0.1·cache_read + 1.25·cache_write` — the number
-that maps to money. Raw `cache_read` does not. The audit also pulls the session's
-`cost_usd` from OpenCode's local DB when the provider reported one — some
-gateways report 0, in which case the effective-token proxy is the signal. The
-multipliers follow Anthropic cache pricing.
+Those four modes are mutually exclusive, and each accepts `--json` for the raw
+numbers — pipe the audit into your own tooling rather than parsing the table.
+Session IDs come from `--top`, or from the `token-norm.log` lines above.
+
+One number carries the section:
+
+```
+effective fresh tokens = input + 0.1·cache_read + 1.25·cache_write
+```
+
+That is what maps to money. Raw `cache_read` does not, which is why a session can
+look enormous and cost little — or look modest and not. The audit also reports
+the session's `cost_usd` straight from OpenCode's local DB when the provider
+supplied one; some gateways report 0, and there the effective-token figure is
+your only signal. Multipliers follow Anthropic cache pricing.
 
 ### Shareable receipt
 
-`--receipt` prints a paste-ready snapshot of any session — same numbers, laid out
-for a screenshot. The verdict is honest, not flattering: context that creeps past
-60k says so. Colors appear only on a TTY; `--no-color` forces plain text.
-Run it on your worst session — a screenshot of that verdict tells the story
-better than any benchmark.
+`--receipt` prints a paste-ready snapshot of any session — the same numbers, laid
+out for a screenshot. The verdict is honest rather than flattering: median
+context past 60k earns `watch`, past 120k earns `HIGH`, and nothing rounds in
+your favor. Color is applied only on a TTY, so piping to a file is already plain
+text; `--no-color` or `NO_COLOR=1` forces it in a terminal too.
+
+Run it on your worst session. That verdict argues the case better than any
+benchmark could.
 
 ```
 ============================================================
@@ -271,9 +343,19 @@ better than any benchmark.
 
 ## Pairs with your `AGENTS.md`
 
-A rules file the reminders can point at. The plugin enforces; your `AGENTS.md`
-still supplies the specifics (read windows, smallest test target, subagent
-delegation, output caps).
+This plugin replaces none of your rules. It makes three of them unskippable and
+leaves the rest to you — read windows, smallest test target, subagent delegation,
+output caps. A counter cannot know any of those. The reminders are written to
+point back at the file that does.
+
+## Further reading
+
+- [**Advice vs. enforcement**](https://github.com/salitaba/opencode-token-norm/blob/main/docs/advice-vs-enforcement.md)
+  — the rule-by-rule case for why a norm sitting in context is not a norm, and
+  the answer to "isn't this just prompt engineering?"
+- [**Post-mortem**](https://github.com/salitaba/opencode-token-norm/blob/main/docs/post-mortem.md)
+  — the session that audited itself, reported 3.0M tokens of waste, and kept
+  going anyway. Every threshold here traces back to a specific moment in it.
 
 ## Links
 
