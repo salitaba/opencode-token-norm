@@ -21,6 +21,6 @@ Type "opencode"
 Enter
 Wait+Screen /Ask anything/
 Sleep 1s
-Type "add a dark mode toggle to the settings page, persisted in localStorage. follow the existing styles."
+Type "add a dark mode toggle to the settings page, persisted in localStorage. Follow-up: theme the other pages. When the toggle is done, call handoff for the follow-up."
 Enter
 Sleep 230s

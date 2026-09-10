@@ -4,7 +4,7 @@
 
 ![token-norm demo: the agent gets counted, audited, and handed off](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.gif)
 
-*Demo (13s at 2x): the agent works while the plugin counts calls and staples the audit result onto its next tool output. [Full-speed MP4](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.mp4).*
+*Demo (28s at 2x): the plugin counts calls and staples the audit onto tool output, then the agent calls `handoff` and lands in a fresh session with the note pre-filled. [Full-speed MP4](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.mp4).*
 
 You wrote a token budget into `AGENTS.md`. It loads into every session. The agent
 reads it, agrees with it, and then runs 184 tool calls and 3.0M effective tokens

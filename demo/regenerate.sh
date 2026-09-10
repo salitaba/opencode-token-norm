@@ -11,7 +11,7 @@ VHS_VERSION="${VHS_VERSION:-v0.12.0}"
 VHS_BIN="${VHS_BIN:-$WORK/bin/vhs}"
 
 SS="${SS:-6}"          # seconds to skip at the start of the recording
-DUR="${DUR:-26}"       # seconds of footage to export
+DUR="${DUR:-56}"       # seconds of footage to export
 SPEED="${SPEED:-0.5}"  # 0.5 = 2x playback in the exported assets
 
 for tool in go git npm ffmpeg ttyd; do
