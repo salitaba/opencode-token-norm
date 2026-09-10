@@ -67,6 +67,13 @@ export const SessionBudgetPlugin: Plugin = async () => {
     // message, which is the earliest point the agent cannot skip past.
     event: async ({ event }) => {
       try {
+        // Counters are in-memory and keyed by session, so without this a
+        // long-lived server would accumulate one entry per session ever
+        // opened. The session is gone; keeping its score buys nothing.
+        if (event?.type === "session.deleted") {
+          state.delete(event.properties.info.id)
+          return
+        }
         if (event?.type !== "message.updated") return
         const info = event.properties?.info
         if (info?.role !== "user") return
