@@ -62,10 +62,10 @@ export interface SessionUsage {
   imageReads: number
   editedFiles: Map<string, number>
   lastTool?: string
-  /** Totals-only tombstone left by `session.deleted`: counters and linkage
-   * stay so rollups keep their dollars, detail is freed. Late events for the
-   * id are ignored; only a real `session.created` revives it. */
-  retired: boolean
+  /** Counters folded in from deleted descendants. `session.deleted` drops the
+   * entry (no tombstone per deleted session) and accumulates its totals here,
+   * so rollups keep their dollars with bounded memory. */
+  folded?: Rollup
 }
 
 export interface NormEvent {
@@ -90,6 +90,9 @@ const HISTORY_MAX = 100
 const SEEN_PARTS_MAX = 500
 const EDITED_MAX = 100
 const RECENT_EDITS_MAX = 20
+// Deleted ids are remembered only long enough to swallow late zombie events;
+// the cap keeps that suppression window from becoming a second ledger.
+const DELETED_MAX = 500
 
 // Tool ids that write to disk. `file.edited` carries no sessionID (verified
 // against the installed runtime schema: `{ file: String }`), so per-session
@@ -152,8 +155,27 @@ function empty(sessionID: string): SessionUsage {
     readCounts: new Map(),
     imageReads: 0,
     editedFiles: new Map(),
-    retired: false,
   }
+}
+
+/** Add a deleted session's own and already-folded counters into `target`. */
+function fold(target: Rollup | undefined, s: SessionUsage): Rollup {
+  const out: Rollup = {
+    costUsd: s.costUsd,
+    effectiveTokens: s.effectiveTokens,
+    stepCount: s.stepCount,
+    calls: s.calls,
+    sessions: 1,
+  }
+  for (const part of [s.folded, target]) {
+    if (!part) continue
+    out.costUsd += part.costUsd
+    out.effectiveTokens += part.effectiveTokens
+    out.stepCount += part.stepCount
+    out.calls += part.calls
+    out.sessions += part.sessions
+  }
+  return out
 }
 
 export function bloat(s: SessionUsage, factor = 2): Bloat {
@@ -177,6 +199,8 @@ export function attribution(s: SessionUsage): Attribution {
 
 export class UsageTracker {
   private sessions = new Map<string, SessionUsage>()
+  /** Recently deleted ids; suppress zombie events without a per-id entry. */
+  private deleted = new Set<string>()
   private recentEdits: string[] = []
 
   get(sessionID: string): SessionUsage {
@@ -200,10 +224,10 @@ export class UsageTracker {
     output: { output?: string } | undefined,
     budgeted: boolean,
   ): void {
+    // A deleted session is gone from the ledger: late tool events must not
+    // re-create it or move the totals already folded into its parent.
+    if (this.deleted.has(sessionID)) return
     const s = this.get(sessionID)
-    // A retired id is a deleted session's ledger entry, not a live session:
-    // late tool events must not resurrect detail or move its frozen totals.
-    if (s.retired) return
     s.lastTool = tool
     if (budgeted) s.calls++
     const bytes = typeof output?.output === "string" ? Buffer.byteLength(output.output) : 0
@@ -261,8 +285,8 @@ export class UsageTracker {
     if (type === "message.updated") {
       const info = props?.info
       if (info?.role === "assistant" && typeof info.sessionID === "string") {
+        if (this.deleted.has(info.sessionID)) return
         const s = this.get(info.sessionID)
-        if (s.retired) return
         if (typeof info.providerID === "string") s.providerID = info.providerID
         if (typeof info.modelID === "string") s.modelID = info.modelID
       }
@@ -271,16 +295,15 @@ export class UsageTracker {
     if (type === "session.created" || type === "session.updated") {
       const info = props?.info
       if (!info?.id) return
-      const s = this.get(info.id)
-      // A late `session.updated` for a tombstone is a stale event; reparenting
-      // frozen totals would move money between rollups, so ignore it. A real
-      // `session.created` revives the entry with counters intact: spend is
-      // never un-spent.
-      if (s.retired) {
+      // A late `session.updated` for a deleted id is a stale event; letting it
+      // re-parent a fresh entry would move money between rollups. A real
+      // `session.created` starts a fresh entry: past totals stay folded into
+      // the tree, never un-spent.
+      if (this.deleted.has(info.id)) {
         if (type !== "session.created") return
-        s.retired = false
+        this.deleted.delete(info.id)
       }
-      this.setParent(s, info.parentID)
+      this.setParent(this.get(info.id), info.parentID)
       return
     }
     if (type === "session.compacted") {
@@ -305,10 +328,10 @@ export class UsageTracker {
     const sessionID = part?.sessionID
     const partID = part?.id
     if (typeof sessionID !== "string" || typeof partID !== "string") return
+    // A late step for a deleted session is a duplicate or a zombie, never new
+    // spend -- the totals were already folded into the parent.
+    if (this.deleted.has(sessionID)) return
     const s = this.get(sessionID)
-    // Deleted sessions keep their ledger entry; a late step for one is a
-    // duplicate or a zombie, never new spend -- ignore it.
-    if (s.retired) return
     // step-finish parts are published once, but dedupe by id is cheap and makes
     // a double delivery cost nothing instead of doubling the budget.
     if (s.seenParts.has(partID)) return
@@ -332,7 +355,8 @@ export class UsageTracker {
   }
 
   private setParent(s: SessionUsage, parentID: string | undefined): void {
-    if (parentID === s.parentID) return
+    // A stale update cannot attach a live entry under a deleted id.
+    if (parentID === s.parentID || (parentID !== undefined && this.deleted.has(parentID))) return
     if (s.parentID) this.sessions.get(s.parentID)?.childIDs.delete(s.sessionID)
     s.parentID = parentID
     if (parentID) this.get(parentID).childIDs.add(s.sessionID)
@@ -341,25 +365,24 @@ export class UsageTracker {
   private remove(sessionID: string): void {
     const s = this.sessions.get(sessionID)
     if (!s) return
-    // Retire to a totals-only tombstone: the parent link and the rolled-up
-    // counters survive (budget money was spent; un-spending on delete lies),
-    // but context, deltas, seen-ids, attribution and history are freed. The
-    // tombstone keeps parent->child reachability so live grandchildren stay
-    // in the root rollup. Late step/tool events are ignored; only a new
-    // session.created for the id revives it (see handleEvent).
-    s.contextNow = 0
-    s.contextPeak = 0
-    s.deltas = []
-    s.seenParts = new Set()
-    s.history = []
-    s.bytesByTool = new Map()
-    s.readCounts = new Map()
-    s.imageReads = 0
-    s.editedFiles = new Map()
-    s.lastTool = undefined
-    s.providerID = undefined
-    s.modelID = undefined
-    s.retired = true
+    // Aggregate, don't tombstone: the deleted session's totals fold into the
+    // parent (money was spent; un-spending on delete lies), its live children
+    // reparent to the grandparent so they stay in the root rollup, and the
+    // entry is dropped. A long-lived server therefore keeps no ledger entry
+    // per deleted session; only a bounded window of ids is retained to swallow
+    // late zombie events (see `deleted`).
+    const parentID = s.parentID
+    const parent = parentID ? this.sessions.get(parentID) : undefined
+    if (parent) parent.folded = fold(parent.folded, s)
+    for (const childID of s.childIDs) {
+      const child = this.sessions.get(childID)
+      if (!child) continue
+      child.parentID = parentID
+      if (parent) parent.childIDs.add(childID)
+    }
+    parent?.childIDs.delete(sessionID)
+    this.sessions.delete(sessionID)
+    addCapped(this.deleted, sessionID, DELETED_MAX)
   }
 
   rootOf(sessionID: string): string {
@@ -398,14 +421,17 @@ export class UsageTracker {
     let stepCount = 0
     let calls = 0
     const ids = this.descendants(sessionID)
+    let sessions = 0
     for (const id of ids) {
       const s = this.sessions.get(id)
       if (!s) continue
-      costUsd += s.costUsd
-      effectiveTokens += s.effectiveTokens
-      stepCount += s.stepCount
-      calls += s.calls
+      const f = s.folded
+      costUsd += s.costUsd + (f?.costUsd ?? 0)
+      effectiveTokens += s.effectiveTokens + (f?.effectiveTokens ?? 0)
+      stepCount += s.stepCount + (f?.stepCount ?? 0)
+      calls += s.calls + (f?.calls ?? 0)
+      sessions += 1 + (f?.sessions ?? 0)
     }
-    return { costUsd, effectiveTokens, stepCount, calls, sessions: ids.length }
+    return { costUsd, effectiveTokens, stepCount, calls, sessions }
   }
 }

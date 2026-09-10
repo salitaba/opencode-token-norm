@@ -165,15 +165,18 @@ That was chosen deliberately, and it defines the contract:
   migrate, and `handoff` plus the manual audit keep working across restarts.
 - **Live state is in memory; spend is a ledger.** Call counts reset when the
   plugin process restarts, and `session.deleted` frees a session's context,
-  deltas and attribution detail. What deletion must not do is un-spend: a
-  deleted session retires to a totals-only entry (cost/tokens/calls plus the
-  parent link), so the root rollup — and `block` enforcement — keep counting
-  money that was actually spent, including through still-live grandchildren.
-  Late events for a deleted id are ignored, never re-counted.
-- **Tombstones are the accepted cost of that ledger.** A long-lived server
-  keeps one small totals entry per deleted session instead of full per-session
-  state. Persisting the ledger is deliberately out of scope until budget
-  enforcement needs to survive process restarts.
+  deltas and attribution detail. What deletion must not do is un-spend: the
+  deleted session's counters fold into its parent (cost/tokens/calls plus a
+  session count), live children reparent to the grandparent, and the entry is
+  dropped — so the root rollup, and `block` enforcement, keep counting money
+  that was actually spent. Late events for a deleted id are ignored, never
+  re-counted.
+- **Aggregation replaces tombstones.** A long-lived server holds no ledger
+  entry per deleted session; totals accumulate on the surviving ancestor. Only
+  a bounded window of recently deleted ids (500) is retained, so a late zombie
+  event cannot re-create an entry or move money between rollups. Persisting the
+  ledger is deliberately out of scope until budget enforcement needs to survive
+  process restarts.
 
 ## What it is not
 

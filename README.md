@@ -315,8 +315,8 @@ tokens.** Method and limitations:
 - **In-memory counters.** Call counts live in the plugin process, keyed by
   session, and reset when OpenCode restarts — a resumed long session undercounts
   until thresholds are crossed again. Counts are never persisted, and deleted
-  sessions leave only a retired totals entry (spend history survives deletion;
-  context and attribution detail does not)
+  sessions fold their totals into the parent and leave the ledger (spend
+  survives deletion; context and attribution detail does not)
   ([why](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md#session-state-and-process-boundaries)).
 - **Nothing leaves your machine.** No network calls, no telemetry. Handoff notes
   are written to `~/.local/share/opencode/handoff/` (follows `XDG_DATA_HOME`;

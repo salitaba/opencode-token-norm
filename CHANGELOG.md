@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Child-session rollups no longer stop at a fixed 20-level depth: `rootOf`
+  walks parent links to the true root, with a cycle guard instead of a cap.
+- `session.deleted` aggregates instead of tombstoning: the deleted session's
+  totals fold into its parent and the entry is dropped, so a long-lived server
+  keeps no ledger entry per deleted session. Live children reparent to the
+  grandparent, and a bounded window of deleted ids still swallows late events.
+- Documented that the model context-limit cache lives for the process: provider
+  config changes need a restart or `TOKEN_NORM_CONTEXT_LIMIT`.
+
 ## [0.5.2] - 2026-09-11
 
 ### Fixed
