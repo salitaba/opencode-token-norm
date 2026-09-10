@@ -4,10 +4,12 @@ Targets the V1 plugin API (`@opencode-ai/plugin` ≥ 1.15.12); the V2 plugin API
 is not targeted yet. The unit suite mocks the runtime that matters most — event
 lifecycle, TUI switching, sqlite, Python audit — so real-runtime behavior is
 tracked here. Run [the manual smoke test](smoke-test.md) against a build before
-a release and add one row per run.
+a release and add one row per run; rows record what actually ran, and a partial
+run says which sections were not exercised.
 
 | OpenCode build | OS | Node | Result | Date | Notes |
 |---|---|---|---|---|---|
+| 1.18.30 | Linux | 24 | pass | 2026-09-11 | Live sessions on plugin 0.5.0: announce @25, task-boundary @40 with one reminder per user-message id, audit @60, handoff note written before the TUI switch and the 2s `no session.created` fallback appended. Not exercised in this run: block/observe modes (§8), subagent refusal (§6), compaction context (§7). |
 | _template_ | _Linux_ | _22_ | _pass/fail_ | _YYYY-MM-DD_ | _deviations, issue links_ |
 
 ## Runtime assumptions
