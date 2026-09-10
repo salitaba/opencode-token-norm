@@ -13,7 +13,7 @@ Reference copy for announcing `opencode-token-norm`. Not shipped in the npm tarb
 | opencode ecosystem PR | https://github.com/anomalyco/opencode/pull/48182 | open, awaiting review |
 | awesome-opencode PR | https://github.com/awesome-opencode/awesome-opencode/pull/693 | open, awaiting review |
 | Discord `#community-projects` | https://opencode.ai/discord | posted |
-| r/ChatGPTCoding | https://www.reddit.com/r/ChatGPTCoding/comments/1wch7su/my_agent_ran_its_own_token_audit_reported_bloat/ | posted, `Resources And Tips` flair |
+| r/ChatGPTCoding | https://www.reddit.com/r/ChatGPTCoding/comments/1wch7su/my_agent_ran_its_own_token_audit_reported_bloat/ | submitted `Resources And Tips`; AutoMod held for manual review (account karma). Do NOT delete/repost — modmail after 24h |
 | r/LocalLLaMA | — | blocked: sub-karma gate, 0 karma |
 | X / HN | — | copy below, unposted |
 
