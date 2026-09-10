@@ -18,8 +18,8 @@ them.
 
 So this plugin adds no advice. It **counts**, and at thresholds it staples the
 instruction onto tool output the agent cannot skip past. It cannot make the agent
-obey. It can make the rule impossible to not see, and that turns out to be most
-of the gap.
+obey. It can put the rule directly in the agent's execution path, and that turns
+out to be most of the gap.
 
 The expensive failure it targets is not a long task. It is a **new** task
 inheriting an old task's context *and* an old task's permission. Dashboards and
@@ -131,6 +131,24 @@ weighted input rather than "the money number."
   not to make further tool calls, and not to summarize beyond one line. Without
   it the agent helpfully keeps working in the session it just declared over —
   spending the exact context the handoff existed to discard.
+
+## Session state and process boundaries
+
+Call counts live in a `Map<sessionID, SessionState>` inside the plugin process.
+That was chosen deliberately, and it defines the contract:
+
+- **The map follows the plugin process, not the OpenCode session.** OpenCode
+  persists sessions in its own database, so a session can outlive a server
+  restart while the counters reset to zero. The guardrails then fail *silent* —
+  they undercount, and never re-fire for spend already made — until fresh calls
+  cross the thresholds again. That is the preferred failure direction:
+  re-deriving counts from the database would staple a boundary reminder onto a
+  session that already paid, every time OpenCode restarts.
+- **Nothing is persisted.** The audit reads OpenCode's database; only the
+  counters are in memory. There is no state file to corrupt and no schema to
+  migrate, and `handoff` plus the manual audit keep working across restarts.
+- **Deleted sessions are evicted.** `session.deleted` removes the entry, so a
+  long-lived server does not accumulate one per session ever opened.
 
 ## What it is not
 

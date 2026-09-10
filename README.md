@@ -6,6 +6,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/salitaba/opencode-token-norm?style=social)](https://github.com/salitaba/opencode-token-norm)
 [![GitHub release](https://img.shields.io/github/v/release/salitaba/opencode-token-norm)](https://github.com/salitaba/opencode-token-norm/releases/latest)
 [![release workflow](https://github.com/salitaba/opencode-token-norm/actions/workflows/release.yml/badge.svg)](https://github.com/salitaba/opencode-token-norm/actions/workflows/release.yml)
+[![test](https://github.com/salitaba/opencode-token-norm/actions/workflows/test.yml/badge.svg)](https://github.com/salitaba/opencode-token-norm/actions/workflows/test.yml)
 
 **Your token rules are advice. This makes them mechanical.**
 
@@ -30,8 +31,22 @@ its behalf, and collapses the session split into one tool call.
   session, and pre-fills the prompt in one call.
 
 It never blocks a tool call, edits arguments, or fails one. The enforcement is
-behavioral: it makes the rule impossible to not see. Every threshold is logged,
-configurable, and independently disableable.
+behavioral: it puts the rule directly in the agent's execution path. Every
+threshold is logged, configurable, and independently disableable.
+
+**Before / after:**
+
+```text
+Without Token Norm
+  Task A ─────────────────────────────┐
+  Task B ─────────────────────────────┘   one context, and B inherits
+                                          A's stale "do everything"
+
+With Token Norm
+  Task A ──→ boundary @40 ──→ audit @60 ──→ handoff ──→ Task B
+             stale override    numbers      note         fresh context,
+             revoked           in-band      written      pre-filled
+```
 
 ## Install
 
@@ -42,31 +57,32 @@ opencode plugin opencode-token-norm --global
 Restart OpenCode. That is the whole install — the command registers the package
 in `~/.config/opencode/opencode.json` and OpenCode caches it at startup.
 
-Requires an OpenCode build with plugin support (`@opencode-ai/plugin` ≥ 1.15.12),
-and `python3` for the audit checkpoint. Without python3 nothing breaks: the
-reminder still fires, and tells the agent to run the audit itself. To run the
-audit by hand you also want the package installed in a project — see below;
-needs Node ≥ 22.
+Requires Node ≥ 22 and an OpenCode build with plugin support. `python3` is only
+used for the audit checkpoint; without it nothing breaks — the reminder still
+fires and tells the agent to run the audit itself.
+
+| Component | Supported |
+|---|---|
+| OpenCode | builds with `@opencode-ai/plugin` ≥ 1.15.12 |
+| Node | ≥ 22 (CI tests 22) |
+| Python | 3.x, optional — audit checkpoint only |
+| OS | Linux, macOS, Windows (CI) |
 
 **Check it loaded.** Nothing surfaces until call 25, so a silent install looks
-exactly like a working one. Every threshold the plugin fires is logged, so after
-a session long enough to trigger one:
+like a working one. Thresholds are logged; an empty log after a short session
+means nothing crossed one, not that the plugin is missing:
 
 ```console
 $ tail ~/.local/share/opencode/token-norm.log
 2026-09-10T11:47:02.913Z ses_f75afcd6 announce-threshold at 25 calls (bash 14, read 9, grep 4)
 ```
 
-An empty file after a six-call session means it is working, not missing — nothing
-crossed a threshold.
+**Turning it off needs no uninstall.** `TOKEN_NORM_BUDGET=0` disables the
+counting half; `TOKEN_NORM_HANDOFF=0` drops the `handoff` tool. Restart to apply.
 
-**Turning it off does not require uninstalling.** `TOKEN_NORM_BUDGET=0` disables
-the counting half; `TOKEN_NORM_HANDOFF=0` drops the `handoff` tool. Both take
-effect on restart.
+## Why add Token Norm?
 
-## Why Token Norm?
-
-| | Statusline / dashboard | Token rule in `AGENTS.md` | token-norm |
+| Capability | Statusline / dashboard | Token rule in `AGENTS.md` | token-norm |
 |---|---|---|---|
 | Who reads it | you, at the edge of the screen | the model, as one more instruction | the model, stapled to output it is already reading |
 | When it fires | live, but outside the agent's context | only if the agent chooses to reread it | at 25 / 40 / 60 calls, in-band |
@@ -82,28 +98,23 @@ numbers arriving in-band, at the moment of spend, change the plan; if the bet
 fails, you still get the honest receipt.
 
 None of this replaces the others: `AGENTS.md` still defines what "on budget"
-means, and a dashboard is still the passive record. This plugin enforces the
-countable parts, in the channel the agent is already reading.
+means, and a dashboard is still the passive record — this is the runtime layer
+between them. It was built against a concrete failure: a token budget written
+into `AGENTS.md`, in context for the whole session, and then 184 tool calls and
+3.0M effective fresh tokens spent on a task that should have been three sessions
+([call by call](https://github.com/salitaba/opencode-token-norm/blob/main/docs/post-mortem.md)).
 
-Here is the failure it was built against. You wrote a token budget into
-`AGENTS.md`. It loads into every session. The agent reads it, agrees with it, and
-then spends 184 tool calls and 3.0M effective fresh tokens on a task that should
-have been three sessions.
-([What that session actually did, call by call](https://github.com/salitaba/opencode-token-norm/blob/main/docs/post-mortem.md).)
-
-Writing the rule better does not fix that. The rules that hold are the ones that
-do not depend on the agent choosing to follow them. So this plugin adds no
-advice: it counts, and at thresholds it staples the instruction onto tool output
-the agent cannot skip past. It cannot make the agent obey; it can make the rule
-impossible to not see — and that turns out to be most of the gap.
-([The design reasoning](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md)
-· [the rule-by-rule case](https://github.com/salitaba/opencode-token-norm/blob/main/docs/advice-vs-enforcement.md).)
+The plugin adds no advice. It counts, and staples the instruction onto output the
+agent cannot skip past — it cannot make the agent obey, only put the rule
+directly in its execution path — and that turns out to be most of the gap.
+([Design reasoning](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md)
+· [rule-by-rule case](https://github.com/salitaba/opencode-token-norm/blob/main/docs/advice-vs-enforcement.md).)
 
 ## Contents
 
 - [What it does](#what-it-does)
 - [Install](#install)
-- [Why Token Norm?](#why-token-norm)
+- [Why add Token Norm?](#why-add-token-norm)
 - [How it works](#how-it-works)
   - [1. Task boundary detection](#1-task-boundary-detection-the-missing-enforcement)
   - [2. Cost statement at 25 calls](#2-cost-statement-at-25-calls--once-per-session)
@@ -230,6 +241,11 @@ design decisions, and why subagents are refused, are in
   delay a tool result at the checkpoint.
 - **Read-only.** The audit opens OpenCode's session DB (`$XDG_DATA_HOME/opencode`
   or `~/.local/share/opencode`) in read-only mode and never writes to it.
+- **In-memory counters.** Call counts live in the plugin process, keyed by
+  session, and reset when OpenCode restarts — a resumed long session undercounts
+  until thresholds are crossed again. Counts are never persisted, and deleted
+  sessions are evicted
+  ([why](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md#session-state-and-process-boundaries)).
 - **Nothing leaves your machine.** No network calls, no telemetry. Handoff notes
   are written to `~/.local/share/opencode/handoff/` (follows `XDG_DATA_HOME`;
   override with `TOKEN_NORM_HANDOFF_DIR`).
@@ -328,7 +344,7 @@ benchmark could.
 ============================================================
                   OPENCODE SESSION RECEIPT
 ============================================================
-  Core package test coverage: kernel + messaging suites
+  Token norm: boundary dedupe regression
   ses_f75afcd6dffeRZXwjB7EgV2czv
   cc/claude-opus-5 · 9router-anthropic · 2026-09-10 11:47
 ------------------------------------------------------------
