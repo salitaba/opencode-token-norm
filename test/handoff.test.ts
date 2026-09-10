@@ -123,6 +123,33 @@ describe("handoff tool", () => {
     expect(fs.readdirSync(DIR)).toHaveLength(1)
   })
 
+  it("disarms the failed switch: a late event cannot satisfy the retry", async () => {
+    const { client } = fakeClient(async () => ({ data: [] }))
+    const hooks = await loadHooks(client)
+    vi.mocked(log).mockClear()
+
+    client.tui.executeCommand.mockRejectedValueOnce(new Error("tui gone"))
+    await expect(hooks.tool!.handoff.execute(args, ctx())).rejects.toThrow("tui gone")
+
+    // The TUI may have dispatched the new session before throwing; that late
+    // event must not be mistaken for the next handoff's own session.
+    await hooks.event!({
+      event: {
+        type: "session.created",
+        properties: { info: { id: "ses_dead_switch", time: { created: Date.now() } } },
+      },
+    } as never)
+
+    // Retry: executeCommand succeeds but emits nothing, so the handoff must
+    // fall back to its own bounded timeout and append its own note.
+    const result = (await hooks.tool!.handoff.execute(args, ctx())) as any
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("no session.created"))
+    expect(client.tui.appendPrompt).toHaveBeenCalledTimes(1)
+    const appended = client.tui.appendPrompt.mock.calls[0][0] as any
+    expect(appended.body.text).toContain(result.metadata.notePath)
+    expect(fs.readdirSync(DIR)).toHaveLength(2)
+  })
+
   it("waits for the session.created event before appending the prompt", async () => {
     const { client } = fakeClient(async () => ({ data: [] }))
     const hooks = await loadHooks(client)

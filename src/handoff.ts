@@ -182,17 +182,21 @@ export const HandoffPlugin: Plugin = async ({ client, directory }) => {
           })
           const waiter = { startedAt, resolve: settle! }
           sessionSwitched = waiter
-          await client.tui.executeCommand({ body: { command: "session_new" } })
-          const confirmed = await Promise.race([
-            switched.then(() => true),
-            sleep(SWITCH_WAIT_MS).then(() => false),
-          ])
-          // The timeout path must not leave a stale resolver behind: a late
-          // session.created from this dead switch could otherwise satisfy the
-          // NEXT handoff's waiter before its own session exists.
-          if (sessionSwitched === waiter) sessionSwitched = null
-          if (!confirmed) {
-            log(`${ctx.sessionID} no session.created in ${SWITCH_WAIT_MS}ms; appending after the settle floor`)
+          try {
+            await client.tui.executeCommand({ body: { command: "session_new" } })
+            const confirmed = await Promise.race([
+              switched.then(() => true),
+              sleep(SWITCH_WAIT_MS).then(() => false),
+            ])
+            if (!confirmed) {
+              log(`${ctx.sessionID} no session.created in ${SWITCH_WAIT_MS}ms; appending after the settle floor`)
+            }
+          } finally {
+            // Every exit path must disarm the waiter -- the timeout, a thrown
+            // executeCommand, anything. A stale resolver left behind could be
+            // satisfied by a late session.created and clear the NEXT handoff's
+            // waiter before its own session exists.
+            if (sessionSwitched === waiter) sessionSwitched = null
           }
           // Floor: even on the event path, give the TUI the minimum time the
           // fixed delay always provided, so fast machines do not regress.
