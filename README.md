@@ -134,9 +134,10 @@ into `AGENTS.md`, in context for the whole session, and then 184 tool calls and
 3.0M effective fresh tokens spent on a task that should have been three sessions
 ([call by call](https://github.com/salitaba/opencode-token-norm/blob/main/docs/post-mortem.md)).
 
-The plugin adds no advice. It counts, and staples the instruction onto output the
-agent cannot skip past — it cannot make the agent obey, only put the rule
-directly in its execution path — and that turns out to be most of the gap.
+The plugin does not rely on agent-authored advice as its enforcement mechanism.
+It counts, and staples generated instructions onto output the agent cannot skip
+past — it cannot make the agent obey, only put the rule directly in its
+execution path — and that turns out to be most of the gap.
 ([Design reasoning](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md)
 · [rule-by-rule case](https://github.com/salitaba/opencode-token-norm/blob/main/docs/advice-vs-enforcement.md).)
 
