@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-11
+
+### Added
+
+- Medium and long benchmark fixtures (`03-many-bugs`, `04-long-sweep`), per-call
+  timing metrics (`gap`, `exec`) in the harness, and the pilot 2 write-up with a
+  provider-free latency microbench in `docs/benchmark.md`.
+
+### Changed
+
+- `token_norm_status` now labels its scopes: `budget` (`toolCalls`, `cost`,
+  `effectiveTokens`) rolls up the session tree, while `session.context` is the
+  current session's window. The JSON shape changed accordingly:
+  `session.toolCalls` moved to `budget.toolCalls`, and both groups carry a
+  `scope` field, so the tree rollup is no longer ambiguous.
+- The status provider is injected per plugin instance via
+  `createStatusTool(provider)` instead of a module-global registry, so two
+  plugin instances in one process can no longer shadow each other's reader.
+
 ## [0.6.0] - 2026-09-11
 
 ### Added
@@ -121,7 +140,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `TokenNormBudget`, which counts tool calls and staples reminders at thresholds, and `TokenNormHandoff`, which collapses the session split into a single tool call.
 
-[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.1...v0.5.2
