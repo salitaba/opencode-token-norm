@@ -85,12 +85,21 @@ $ tail ~/.local/share/opencode/token-norm.log
 2026-09-10T11:47:02.913Z ses_f75afcd6 announce-threshold at 25 calls (bash 14, read 9, grep 4)
 ```
 
-**If it doesn't load.** The plugin is installed as a local file precisely
-because some OpenCode builds ≥ 1.17 skip npm-spec plugins silently. After a
-restart, confirm the file exists at
-`~/.config/opencode/plugins/opencode-token-norm.js` and work through the
-[smoke test](docs/smoke-test.md). Developing on the plugin itself? After
-`npm run build`, `npm run install:local` rebuilds the bundle and reinstalls it.
+**If it doesn't work.** In order of likelihood:
+
+- `sh: opencode-token-norm: not found` — you ran `npx` from inside a clone of
+  this repo; npm resolves the local package name instead of downloading it. Run
+  the command from any other directory.
+- `npx` unavailable, or the registry is blocked — `npm i -g opencode-token-norm`
+  then run `opencode-token-norm`, or `npm i opencode-token-norm` in a project and
+  run `npx opencode-token-norm` from there.
+- Nothing appears after a restart — confirm
+  `~/.config/opencode/plugins/opencode-token-norm.js` exists, then work through
+  the [smoke test](docs/smoke-test.md). If `opencode.json` still lists
+  `opencode-token-norm` under `plugin`, remove that entry — a future fixed
+  runtime would otherwise load it twice.
+- Developing on the plugin itself? After `npm run build`,
+  `npm run install:local` rebuilds the bundle and reinstalls it.
 
 **Turning it off needs no uninstall.** `TOKEN_NORM_BUDGET=0` disables the
 counting half; `TOKEN_NORM_HANDOFF=0` drops the `handoff` tool. Restart to apply.
