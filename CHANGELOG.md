@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-09-11
+
 ### Fixed
 
 - Child-session rollups no longer stop at a fixed 20-level depth: `rootOf`
@@ -106,7 +108,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `TokenNormBudget`, which counts tool calls and staples reminders at thresholds, and `TokenNormHandoff`, which collapses the session split into a single tool call.
 
-[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.4.1...v0.5.0
