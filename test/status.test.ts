@@ -11,11 +11,11 @@ vi.mock("../src/log.js", () => ({ log: vi.fn() }))
 vi.mock("../src/audit.js", () => ({ runAudit: vi.fn(() => "effective fresh tokens: 123k") }))
 
 import {
+  createStatusTool,
   emptyStatus,
   readStatus,
   recommend,
   renderStatus,
-  setStatusProvider,
   snapshotFrom,
   type Recommendation,
   type StatusSnapshot,
@@ -34,8 +34,13 @@ describe("status snapshot", () => {
         mode: "warn",
       }),
     ).toEqual({
-      session: { toolCalls: 7, context: 1234, contextLimit: null },
-      budget: { cost: { used: 0.5, limit: null }, effectiveTokens: { used: 100, limit: null } },
+      session: { scope: "current-session", context: 1234, contextLimit: null },
+      budget: {
+        scope: "session-tree",
+        toolCalls: 7,
+        cost: { used: 0.5, limit: null },
+        effectiveTokens: { used: 100, limit: null },
+      },
       recommendation: "continue",
     })
   })
@@ -51,8 +56,10 @@ describe("status snapshot", () => {
       exceeded: false,
       mode: "warn",
     })
-    expect(snap.session.contextLimit).toBe(100)
+    expect(snap.session).toEqual({ scope: "current-session", context: 50, contextLimit: 100 })
     expect(snap.budget).toEqual({
+      scope: "session-tree",
+      toolCalls: 1,
       cost: { used: 1, limit: 2 },
       effectiveTokens: { used: 3, limit: 1000 },
     })
@@ -76,17 +83,16 @@ describe("status snapshot", () => {
   })
 
   it("returns zeros with no provider, and zeros when a provider throws", async () => {
-    setStatusProvider(undefined)
-    expect(await readStatus("ses_none")).toEqual(emptyStatus())
-    expect(await readStatus(undefined)).toEqual(emptyStatus())
+    expect(await readStatus(undefined, "ses_none")).toEqual(emptyStatus())
+    expect(await readStatus(undefined, undefined)).toEqual(emptyStatus())
 
-    setStatusProvider(() => {
-      throw new Error("boom")
-    })
-    expect(await readStatus("ses_throw")).toEqual(emptyStatus())
+    expect(
+      await readStatus(() => {
+        throw new Error("boom")
+      }, "ses_throw"),
+    ).toEqual(emptyStatus())
 
-    setStatusProvider(async () => undefined)
-    expect(await readStatus("ses_undefined")).toEqual(emptyStatus())
+    expect(await readStatus(async () => undefined, "ses_undefined")).toEqual(emptyStatus())
 
     const ok: StatusSnapshot = snapshotFrom({
       toolCalls: 2,
@@ -97,9 +103,26 @@ describe("status snapshot", () => {
       exceeded: false,
       mode: "warn",
     })
-    setStatusProvider(() => ok)
-    expect(await readStatus("ses_ok")).toEqual(ok)
-    setStatusProvider(undefined)
+    expect(await readStatus(() => ok, "ses_ok")).toEqual(ok)
+  })
+
+  it("binds each tool to its injected provider, with no module global", async () => {
+    const snapshotFor = (toolCalls: number): StatusSnapshot =>
+      snapshotFrom({
+        toolCalls,
+        context: 0,
+        cost: { used: 0 },
+        effectiveTokens: { used: 0 },
+        pressured: false,
+        exceeded: false,
+        mode: "warn",
+      })
+    const first: any = createStatusTool(() => snapshotFor(1))
+    const second: any = createStatusTool(() => snapshotFor(2))
+    const run = async (t: any) =>
+      JSON.parse((await t.execute({}, { sessionID: "ses_x" })).output) as StatusSnapshot
+    expect((await run(first)).budget.toolCalls).toBe(1)
+    expect((await run(second)).budget.toolCalls).toBe(2)
   })
 })
 
@@ -145,8 +168,13 @@ describe("token_norm_status tool", () => {
   it("reports zeros for an unknown session", async () => {
     const h = await freshPlugin()
     expect(await status(h, "ses_unknown")).toEqual({
-      session: { toolCalls: 0, context: 0, contextLimit: null },
-      budget: { cost: { used: 0, limit: null }, effectiveTokens: { used: 0, limit: null } },
+      session: { scope: "current-session", context: 0, contextLimit: null },
+      budget: {
+        scope: "session-tree",
+        toolCalls: 0,
+        cost: { used: 0, limit: null },
+        effectiveTokens: { used: 0, limit: null },
+      },
       recommendation: "continue",
     })
   })
@@ -165,7 +193,8 @@ describe("token_norm_status tool", () => {
     await stepFinish(h, s, "p1", 0.5, { input: 100, output: 0, reasoning: 0, cache: { read: 200, write: 0 } })
 
     const snap = await status(h, s)
-    expect(snap.session).toEqual({ toolCalls: 2, context: 300, contextLimit: 500 })
+    expect(snap.session).toEqual({ scope: "current-session", context: 300, contextLimit: 500 })
+    expect(snap.budget.toolCalls).toBe(2)
     expect(snap.budget.cost).toEqual({ used: 0.5, limit: 2 })
     expect(snap.budget.effectiveTokens).toEqual({ used: 120, limit: 1000 })
     expect(snap.recommendation).toBe("continue")
@@ -180,7 +209,8 @@ describe("token_norm_status tool", () => {
     await toolCall(h, child)
 
     const snap = await status(h, parent)
-    expect(snap.session.toolCalls).toBe(2)
+    expect(snap.budget.scope).toBe("session-tree")
+    expect(snap.budget.toolCalls).toBe(2)
   })
 
   it("recommends warn at a crossed metric and block only in block mode", async () => {
@@ -190,7 +220,7 @@ describe("token_norm_status tool", () => {
     expect((await status(warn, "ses_warn")).recommendation).toBe("continue")
     await toolCall(warn, "ses_warn")
     const crossed = await status(warn, "ses_warn")
-    expect(crossed.session.toolCalls).toBe(3)
+    expect(crossed.budget.toolCalls).toBe(3)
     expect(crossed.recommendation).toBe("warn")
 
     const block = await freshPlugin({ TOKEN_NORM_MODE: "block", TOKEN_NORM_MAX_TOOL_CALLS: "1" })

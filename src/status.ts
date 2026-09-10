@@ -7,10 +7,11 @@
 // the window, budgetMetrics for limits and warn thresholds -- so a status can
 // never disagree with the reminder that would have been injected.
 //
-// session-budget.ts owns those accumulators, so it registers a reader here at
-// plugin construction. status.ts importing session-budget.ts back would be a
-// cycle; the module-level registry avoids it. With no registered reader, an
-// unknown session, or a reader that throws, the result is zeros: a status
+// session-budget.ts owns those accumulators, so it builds the reader and
+// injects it through createStatusTool: importing session-budget.ts back would
+// be a cycle, and a module-global registry would let a second plugin instance
+// in the same process shadow the first one's reader. With no injected reader,
+// an unknown session, or a reader that throws, the result is zeros: a status
 // query must never break a session.
 
 import { tool } from "@opencode-ai/plugin"
@@ -26,11 +27,15 @@ export interface StatusMetric {
 
 export interface StatusSnapshot {
   session: {
-    toolCalls: number
+    /** The context window is measured on the current session only. */
+    scope: "current-session"
     context: number
     contextLimit: number | null
   }
   budget: {
+    /** Budgets roll up the session tree: the root plus every descendant. */
+    scope: "session-tree"
+    toolCalls: number
     cost: StatusMetric
     effectiveTokens: StatusMetric
   }
@@ -81,11 +86,13 @@ export function recommend(facts: Pick<StatusFacts, "pressured" | "exceeded" | "m
 export function snapshotFrom(facts: StatusFacts): StatusSnapshot {
   return {
     session: {
-      toolCalls: facts.toolCalls,
+      scope: "current-session",
       context: facts.context,
       contextLimit: facts.contextLimit ?? null,
     },
     budget: {
+      scope: "session-tree",
+      toolCalls: facts.toolCalls,
       cost: metric(facts.cost.used, facts.cost.limit),
       effectiveTokens: metric(facts.effectiveTokens.used, facts.effectiveTokens.limit),
     },
@@ -105,8 +112,11 @@ export function emptyStatus(): StatusSnapshot {
   })
 }
 
-/** Never throws: a failed or unknown read reports zeros. */
-export async function readStatus(sessionID: string | undefined): Promise<StatusSnapshot> {
+/** Never throws: an absent provider, unknown session, or failed read reports zeros. */
+export async function readStatus(
+  provider: StatusProvider | undefined,
+  sessionID: string | undefined,
+): Promise<StatusSnapshot> {
   if (!provider || typeof sessionID !== "string" || sessionID.length === 0) return emptyStatus()
   try {
     const snapshot = await provider(sessionID)
@@ -120,13 +130,14 @@ export function renderStatus(snapshot: StatusSnapshot): string {
   return JSON.stringify(snapshot, null, 2)
 }
 
-export function createStatusTool() {
+export function createStatusTool(provider?: StatusProvider) {
   return tool({
     description: [
-      "Report this session's token-budget accounting as machine-readable JSON:",
-      "session.toolCalls, session.context, session.contextLimit, budget.cost and",
-      "budget.effectiveTokens (each { used, limit }, limit null when unconfigured),",
-      "and recommendation (continue | warn | handoff | block).",
+      "Report token-budget accounting as machine-readable JSON. budget",
+      "(toolCalls, cost, effectiveTokens) rolls up the whole session tree -- root",
+      "plus descendant sessions; session.context is the current session's window",
+      "only. Each metric is { used, limit }, limit null when unconfigured.",
+      "recommendation is continue | warn | handoff | block.",
       "",
       "Use before starting a large task, when the user asks what the session has cost,",
       "or to check whether the token-norm plugin would warn, hand off, or block now.",
@@ -134,7 +145,7 @@ export function createStatusTool() {
     ].join("\n"),
     args: {},
     async execute(_args, ctx) {
-      const snapshot = await readStatus(ctx.sessionID)
+      const snapshot = await readStatus(provider, ctx.sessionID)
       return {
         title: `Token status (${snapshot.recommendation})`,
         output: renderStatus(snapshot),

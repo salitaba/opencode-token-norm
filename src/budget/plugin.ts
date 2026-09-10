@@ -31,7 +31,7 @@ import {
   handoffLines,
 } from "./reminders.js"
 import { SEEN_MESSAGES_MAX, state, topTools, track, usage, type SessionState } from "./state.js"
-import { createStatusTool, setStatusProvider, snapshotFrom } from "../status.js"
+import { createStatusTool, snapshotFrom, type StatusProvider } from "../status.js"
 
 const HANDOFF_TOOL = "handoff"
 
@@ -60,10 +60,10 @@ function pauseSessionID(event: any): string | undefined {
 
 export const SessionBudgetPlugin: Plugin = async ({ client } = {} as any) => {
   // The status tool must answer from the same accumulators that enforce the
-  // budget, so the closure that owns `state` and `usage` registers the reader
-  // here. status.ts cannot import this module back (this module imports it);
-  // the registry keeps the tool definition free of a construction dependency.
-  setStatusProvider(async (sessionID) => {
+  // budget, so the closure that owns `state` and `usage` is injected into the
+  // tool factory. A module-global reader would let a second plugin instance in
+  // the same process shadow this one; injection keeps the binding per instance.
+  const statusProvider: StatusProvider = async (sessionID) => {
     const contextLimit = await contextLimitFor(client, sessionID)
     const rollup = usage.rollup(usage.rootOf(sessionID))
     const metrics = budgetMetrics(sessionID, rollup, contextLimit)
@@ -77,13 +77,13 @@ export const SessionBudgetPlugin: Plugin = async ({ client } = {} as any) => {
       exceeded: metrics.some((m) => m.used >= m.limit),
       mode: MODE,
     })
-  })
+  }
 
   return {
     // On-demand accounting for exactly the numbers the thresholds below use.
     // Read-only, no args, and a no-op (zeros) for unknown sessions.
     tool: {
-      token_norm_status: createStatusTool(),
+      token_norm_status: createStatusTool(statusProvider),
     },
 
     // A new user message in an already-large session is the task boundary the
