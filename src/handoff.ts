@@ -14,6 +14,7 @@
 // for handoffs the user may want to redirect before any tokens burn.
 
 import { tool, type Plugin } from "@opencode-ai/plugin"
+import { randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { HANDOFF_DIR } from "./config.js"
@@ -24,7 +25,13 @@ import { log } from "./log.js"
 // Appending the prompt too early lands the text in the OLD session's editor,
 // which is worse than not splitting at all -- the user sees nothing and the
 // handoff is lost.
+//
+// No V1 API exposes a readiness signal (every TUI endpoint returns a boolean),
+// so the wait uses the `session.created` event as evidence, with the old fixed
+// delay as a floor and a bounded fallback. Fast machines behave exactly as
+// before; a slow switch waits for proof instead of guessing.
 const SWITCH_SETTLE_MS = Number.parseInt(process.env.TOKEN_NORM_SETTLE_MS ?? "", 10) || 350
+const SWITCH_WAIT_MS = Number.parseInt(process.env.TOKEN_NORM_SWITCH_WAIT_MS ?? "", 10) || 2000
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -73,7 +80,23 @@ function renderHandoff({ task, done, next, files, notes }: HandoffArgs): string 
 }
 
 export const HandoffPlugin: Plugin = async ({ client, directory }) => {
+  // Set while a handoff is waiting for its new session to exist; the event hook
+  // below resolves it. `null` means no switch is in flight.
+  let sessionSwitched: (() => void) | null = null
+
   return {
+    event: async ({ event }) => {
+      if (!sessionSwitched) return
+      if (event?.type !== "session.created") return
+      const info = event.properties?.info
+      // Subagent sessions also emit session.created; only a primary (parentless)
+      // session is evidence that the TUI's switch landed.
+      if (!info?.id || info.parentID) return
+      const resolve = sessionSwitched
+      sessionSwitched = null
+      resolve()
+    },
+
     tool: {
       handoff: tool({
         description: [
@@ -124,18 +147,41 @@ export const HandoffPlugin: Plugin = async ({ client, directory }) => {
           const autoSubmit = args.submit !== false
           const body = renderHandoff(args)
 
-          await fs.mkdir(HANDOFF_DIR, { recursive: true })
-          const notePath = path.join(HANDOFF_DIR, `${stamp()}-${ctx.sessionID}.md`)
+          // 0700/0600: the note can quote repo paths and findings, so it is
+          // private by default. Modes are creation-time only (umask applies);
+          // directories that already exist keep their current permissions.
+          await fs.mkdir(HANDOFF_DIR, { recursive: true, mode: 0o700 })
+          // The timestamp is second-precision, so two handoffs from one session
+          // in the same second would collide and the second write would silently
+          // destroy the first note. The UUID makes the name unique per call.
+          const notePath = path.join(HANDOFF_DIR, `${stamp()}-${randomUUID().slice(0, 8)}-${ctx.sessionID}.md`)
           // Persist BEFORE switching. If the TUI call fails, the handoff still
           // exists on disk and the user can recover it manually; the reverse
           // ordering would lose the note on exactly the failure that matters.
-          await fs.writeFile(notePath, `${body}\n\n_from session ${ctx.sessionID} in ${directory}_\n`, "utf8")
+          await fs.writeFile(notePath, `${body}\n\n_from session ${ctx.sessionID} in ${directory}_\n`, {
+            encoding: "utf8",
+            mode: 0o600,
+          })
           log(`${ctx.sessionID} handoff written to ${notePath}`)
 
           const prompt = `${body}\n\n_Handoff note: ${notePath}_\n`
 
+          const startedAt = Date.now()
+          const switched = new Promise<void>((resolve) => {
+            sessionSwitched = resolve
+          })
           await client.tui.executeCommand({ body: { command: "session_new" } })
-          await sleep(SWITCH_SETTLE_MS)
+          const confirmed = await Promise.race([
+            switched.then(() => true),
+            sleep(SWITCH_WAIT_MS).then(() => false),
+          ])
+          if (!confirmed) {
+            log(`${ctx.sessionID} no session.created in ${SWITCH_WAIT_MS}ms; appending after the settle floor`)
+          }
+          // Floor: even on the event path, give the TUI the minimum time the
+          // fixed delay always provided, so fast machines do not regress.
+          const elapsed = Date.now() - startedAt
+          if (elapsed < SWITCH_SETTLE_MS) await sleep(SWITCH_SETTLE_MS - elapsed)
           await client.tui.appendPrompt({ body: { text: prompt } })
           if (autoSubmit) await client.tui.submitPrompt()
 

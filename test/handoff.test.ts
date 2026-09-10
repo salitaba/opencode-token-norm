@@ -5,7 +5,8 @@ vi.hoisted(() => {
   const base = process.env.TMPDIR ?? process.env.TEMP ?? "/tmp"
   const sep = base.endsWith("/") ? "" : "/"
   process.env.TOKEN_NORM_HANDOFF_DIR = `${base}${sep}token-norm-handoff-test-${process.pid}`
-  process.env.TOKEN_NORM_SETTLE_MS = "0"
+  process.env.TOKEN_NORM_SETTLE_MS = "10"
+  process.env.TOKEN_NORM_SWITCH_WAIT_MS = "10"
   process.env.TOKEN_NORM_LOG = `${base}${sep}token-norm-handoff-test-${process.pid}.log`
 })
 
@@ -48,8 +49,12 @@ function ctx(agent = "build") {
   }
 }
 
+async function loadHooks(client: unknown) {
+  return HandoffPlugin({ client, directory: "/repo" } as never)
+}
+
 async function load(client: unknown) {
-  const hooks = await HandoffPlugin({ client, directory: "/repo" } as never)
+  const hooks = await loadHooks(client)
   return hooks.tool!.handoff
 }
 
@@ -113,6 +118,50 @@ describe("handoff tool", () => {
 
     await expect(handoff.execute(args, ctx())).rejects.toThrow("tui gone")
     expect(fs.readdirSync(DIR)).toHaveLength(1)
+  })
+
+  it("waits for the session.created event before appending the prompt", async () => {
+    const { client } = fakeClient(async () => ({ data: [] }))
+    const hooks = await loadHooks(client)
+    const order: string[] = []
+
+    client.tui.executeCommand.mockImplementation(async () => {
+      order.push("session_new")
+      await hooks.event!({
+        event: { type: "session.created", properties: { info: { id: "ses_new" } } },
+      } as never)
+      order.push("created-event")
+    })
+    client.tui.appendPrompt.mockImplementation(async () => {
+      order.push("append")
+    })
+
+    await hooks.tool!.handoff.execute(args, ctx())
+    expect(order).toEqual(["session_new", "created-event", "append"])
+  })
+
+  it("does not overwrite when two handoffs happen in the same second", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      const { client } = fakeClient(async () => ({ data: [] }))
+      const handoff = await load(client)
+      const first = (await handoff.execute(args, ctx())) as any
+      const second = (await handoff.execute(args, ctx())) as any
+
+      expect(first.metadata.notePath).not.toBe(second.metadata.notePath)
+      expect(fs.readdirSync(DIR)).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.skipIf(process.platform === "win32")("writes the directory 0700 and the note 0600", async () => {
+    const { client } = fakeClient(async () => ({ data: [] }))
+    const handoff = await load(client)
+    const result = (await handoff.execute(args, ctx())) as any
+
+    expect(fs.statSync(DIR).mode & 0o777).toBe(0o700)
+    expect(fs.statSync(result.metadata.notePath).mode & 0o777).toBe(0o600)
   })
 
   it("submit: false stops at the pre-filled prompt", async () => {
