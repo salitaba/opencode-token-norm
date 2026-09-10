@@ -255,6 +255,34 @@ describe("SessionBudgetPlugin tier 1 budgets", () => {
     await expect(call("handoff")).resolves.toBeUndefined()
   })
 
+  it("never blocks on an unknown measurement (unresolvable context limit)", async () => {
+    vi.resetModules()
+    for (const key of TIER1_KEYS) delete process.env[key]
+    process.env.TOKEN_NORM_MODE = "block"
+    process.env.TOKEN_NORM_MAX_TOOL_CALLS = "100"
+    const mod = await import("../src/session-budget.js")
+    const h: any = await mod.SessionBudgetPlugin({
+      client: { config: { providers: vi.fn().mockRejectedValue(new Error("providers unavailable")) } },
+    } as never)
+    const s = "ses_unknown_limit"
+
+    await h.event({
+      event: {
+        type: "message.updated",
+        properties: { info: { id: "m1", role: "assistant", sessionID: s, providerID: "p", modelID: "m" } },
+      },
+    })
+    // Provider/model known but the window lookup fails, while the observed
+    // context is far beyond any real window. No limit means no context metric,
+    // so the call must pass instead of being refused on a guessed limit.
+    await stepFinish(h, s, "p1", 0, { input: 9_000_000, output: 0, cache: { read: 0, write: 0 } })
+
+    const call = (tool: string) =>
+      h["tool.execute.before"]({ tool, sessionID: s, callID: "c" }, { args: {} })
+    await expect(call("read")).resolves.toBeUndefined()
+    expect(await toolCall(h, s)).not.toContain("TOKEN NORM block")
+  })
+
   it("handoff mode recommends at idle and pre-fills touched files", async () => {
     const h = await freshPlugin({ TOKEN_NORM_MODE: "handoff", TOKEN_NORM_MAX_TOOL_CALLS: "1" })
     const s = "ses_handoff"
