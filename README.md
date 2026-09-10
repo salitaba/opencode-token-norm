@@ -30,9 +30,8 @@ its behalf, and collapses the session split into one tool call.
 - **Ships a `handoff` tool** that persists a structured note, opens a fresh
   session, and pre-fills the prompt in one call.
 
-It never blocks a tool call, edits arguments, or fails one. The enforcement is
-behavioral: it puts the rule directly in the agent's execution path. Every
-threshold is logged, configurable, and independently disableable.
+The enforcement is behavioral: it puts the rule directly in the agent's execution
+path. Every threshold is logged, configurable, and independently disableable.
 
 **Before / after:**
 
@@ -121,6 +120,7 @@ directly in its execution path — and that turns out to be most of the gap.
   - [3. Audit checkpoint every 60 calls](#3-audit-checkpoint-every-60-calls--already-run)
   - [4. Compaction context](#4-compaction-context)
   - [5. The `handoff` tool](#5-the-handoff-tool)
+- [Does it work?](#does-it-work)
 - [Safety](#safety)
 - [Configuration](#configuration)
 - [Run the audit yourself](#run-the-audit-yourself)
@@ -228,6 +228,26 @@ refused for subagents, and the tool result ends with an explicit STOP so the
 agent doesn't keep spending in the session it just closed. The rest of the
 design decisions, and why subagents are refused, are in
 [the design notes](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md#handoff-design-decisions).
+
+---
+
+## Does it work?
+
+Mechanically, yes — the logs from one real machine show the guardrails firing,
+not just loading. Since 2026-09-08: **205 sessions** crossed the 25-call
+announce, **69** hit the audit checkpoint, **583** task boundaries fired, and
+**74 `handoff` notes** were written.
+
+The strongest behavioral signal is what happens after a handoff: **64 of 71
+(90%)** matched sessions stopped within 5 minutes of the note being written
+(median: 4 seconds), and **none continued past an hour**. The fresh session did
+the work; the old one actually ended.
+
+On spend, the data is honest but weak: a single user, no control group, and the
+"after" window is dominated by building this plugin, so before/after medians flip
+direction depending on the cohort filter. **We do not claim the plugin reduced
+tokens.** Method and limitations:
+[evaluation notes](https://github.com/salitaba/opencode-token-norm/blob/main/docs/evaluation.md).
 
 ---
 
