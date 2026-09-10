@@ -7,14 +7,11 @@
 // friction every time.
 //
 // This makes the split one tool call. The agent writes the handoff, the plugin
-// persists it to disk, opens a NEW TUI session, and pre-fills that session's
-// prompt with the handoff text. The user lands in a cold session with the
-// context already typed, and presses enter.
+// persists it to disk, opens a NEW TUI session, pre-fills its prompt with the
+// handoff text, and submits it -- the cold session starts working immediately.
 //
-// The prompt is pre-filled but NOT submitted by default. An auto-submitted
-// handoff would start burning tokens on a task the user may have wanted to
-// redirect, and the whole point of the split is to give them that beat. Pass
-// submit: true when the continuation is genuinely unattended.
+// Pass submit: false to stop at the pre-filled prompt instead. That beat exists
+// for handoffs the user may want to redirect before any tokens burn.
 
 import { tool, type Plugin } from "@opencode-ai/plugin"
 import fs from "node:fs/promises"
@@ -81,8 +78,8 @@ export const HandoffPlugin: Plugin = async ({ client, directory }) => {
       handoff: tool({
         description: [
           "End the current session at a phase boundary and continue in a FRESH session.",
-          "Persists a handoff note to disk, opens a new TUI session, and pre-fills its prompt",
-          "with that note so the user only has to press enter.",
+          "Persists a handoff note to disk, opens a new TUI session, pre-fills its prompt",
+          "with that note, and submits it so the fresh session starts immediately.",
           "",
           "Use when: diagnosis is done and implementation has not started; the user asks for a",
           "new/clean session; context is large and the remaining work does not need the",
@@ -108,7 +105,9 @@ export const HandoffPlugin: Plugin = async ({ client, directory }) => {
           submit: tool.schema
             .boolean()
             .optional()
-            .describe("Auto-submit the handoff in the new session. Default false: the user presses enter."),
+            .describe(
+              "Auto-submit the handoff in the new session. Default true: the fresh session starts immediately. Pass false to pre-fill and wait for enter.",
+            ),
         },
         async execute(args, ctx) {
           if (await isSubagent(client, ctx.agent)) {
@@ -122,6 +121,7 @@ export const HandoffPlugin: Plugin = async ({ client, directory }) => {
             }
           }
 
+          const autoSubmit = args.submit !== false
           const body = renderHandoff(args)
 
           await fs.mkdir(HANDOFF_DIR, { recursive: true })
@@ -137,12 +137,12 @@ export const HandoffPlugin: Plugin = async ({ client, directory }) => {
           await client.tui.executeCommand({ body: { command: "session_new" } })
           await sleep(SWITCH_SETTLE_MS)
           await client.tui.appendPrompt({ body: { text: prompt } })
-          if (args.submit) await client.tui.submitPrompt()
+          if (autoSubmit) await client.tui.submitPrompt()
 
           await client.tui.showToast({
             body: {
               title: "Handoff",
-              message: args.submit ? "New session started" : "New session ready — press enter",
+              message: autoSubmit ? "New session started" : "New session ready — press enter",
               variant: "success",
             },
           })
@@ -151,13 +151,13 @@ export const HandoffPlugin: Plugin = async ({ client, directory }) => {
             title: "Handed off to new session",
             output: [
               `Handoff written to ${notePath}`,
-              `New session opened; prompt ${args.submit ? "submitted" : "pre-filled (awaiting enter)"}.`,
+              `New session opened; prompt ${autoSubmit ? "submitted" : "pre-filled (awaiting enter)"}.`,
               ``,
               `STOP HERE. This session is over. Do not continue the task, do not make further`,
               `tool calls, and do not summarize beyond one line — the work now belongs to the`,
               `new session. Continuing here spends the context the handoff exists to discard.`,
             ].join("\n"),
-            metadata: { notePath, submitted: !!args.submit },
+            metadata: { notePath, submitted: autoSubmit },
           }
         },
       }),
