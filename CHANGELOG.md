@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-11
+
+### Fixed
+
+- `handoff` no longer treats an untimed `session.created` event as the fresh session: events whose `time.created` is not a number are rejected as unverifiable, and the bounded timeout fallback still appends. Fixes a race where the handoff note could be appended to the wrong session.
+
+### Added
+
+- `docs/compatibility.md`: per-build compatibility matrix and runtime assumptions, linked from the README and smoke-test docs.
+
 ### Changed
 
 - README: troubleshoot the one-command install — the npx-from-a-repo-clone resolution gotcha, offline/global fallbacks, and post-restart checks.
@@ -53,7 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `TokenNormBudget`, which counts tool calls and staples reminders at thresholds, and `TokenNormHandoff`, which collapses the session split into a single tool call.
 
-[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/salitaba/opencode-token-norm/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/salitaba/opencode-token-norm/compare/v0.2.0...v0.2.1
