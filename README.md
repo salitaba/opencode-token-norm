@@ -2,6 +2,10 @@
 
 **Your token rules are advice. This makes them mechanical.**
 
+![token-norm demo: the agent gets counted, audited, and handed off](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.gif)
+
+*Demo (13s at 2x): the agent works while the plugin counts calls and staples the audit result onto its next tool output. [Full-speed MP4](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.mp4).*
+
 You wrote a token budget into `AGENTS.md`. It loads into every session. The agent
 reads it, agrees with it, and then runs 184 tool calls and 3.0M effective tokens
 on a task that should have been three sessions.

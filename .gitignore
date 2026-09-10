@@ -4,3 +4,4 @@ __pycache__/
 *.tgz
 *.log
 .DS_Store
+demo/.work/
