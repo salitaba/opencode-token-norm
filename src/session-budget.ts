@@ -32,6 +32,12 @@ interface SessionState {
 
 const state = new Map<string, SessionState>()
 
+// User messages are remembered only long enough to dedupe the repeated
+// `message.updated` events that follow one message. A Set preserves insertion
+// order, so the oldest entry is the eviction candidate; without a cap the set
+// would grow for the life of a long session.
+const SEEN_MESSAGES_MAX = 200
+
 function track(sessionID: string, tool: string): SessionState {
   let s = state.get(sessionID)
   if (!s) {
@@ -95,6 +101,10 @@ export const SessionBudgetPlugin: Plugin = async () => {
         // 61st copy of this one. Cry wolf once per wolf.
         if (!info.id || s.seenMessages.has(info.id)) return
         s.seenMessages.add(info.id)
+        if (s.seenMessages.size > SEEN_MESSAGES_MAX) {
+          const oldest = s.seenMessages.values().next().value
+          if (oldest !== undefined) s.seenMessages.delete(oldest)
+        }
         s.pendingBoundary = true
         log(`${info.sessionID} task-boundary at ${s.calls} calls (msg ${info.id})`)
       } catch {
