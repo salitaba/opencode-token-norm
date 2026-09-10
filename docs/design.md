@@ -84,6 +84,13 @@ command is cheap, deterministic, and opens OpenCode's sqlite DB read-only. The
 result arrives stapled to output the agent is already reading, leaving it a fact
 to report rather than a step to defer.
 
+The checkpoint is synchronous (`execFileSync`, 20s timeout), so a slow database
+can briefly stall OpenCode's event loop at the checkpoint. That is a deliberate
+trade: in exchange, the numbers are attached to the tool output the agent is
+already reading — no second step to defer and no ordering gap between the
+checkpoint and the number. The timeout and read-only access keep the worst case
+bounded.
+
 Tool calls are what get counted, because tool calls are what spend context.
 `todowrite`, `question`, and `skill` are exempt: planning and asking usually
 *save* calls. Reads and greps do count, because context is the thing you are

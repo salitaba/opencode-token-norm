@@ -1,7 +1,7 @@
 {
   "name": "opencode-token-norm",
   "version": "0.3.0",
-  "description": "Enforces a token budget in OpenCode: counts tool calls, staples un-skippable reminders at thresholds, runs the usage audit for you, and makes the session split a single tool call",
+  "description": "OpenCode plugin for token-budget guardrails: counts tool calls, injects reminders at thresholds, audits usage automatically, and makes session handoff a single tool call",
   "type": "module",
   "license": "MIT",
   "author": "salitaba",
