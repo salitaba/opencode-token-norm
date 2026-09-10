@@ -1,6 +1,6 @@
 {
   "name": "opencode-token-norm",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "OpenCode plugin for token-budget guardrails: counts budgeted tool calls, injects reminders at thresholds, audits usage automatically, and makes session handoff a single tool call",
   "type": "module",
   "license": "MIT",
@@ -35,18 +35,24 @@
     "README.md",
     "LICENSE"
   ],
+  "bin": {
+    "opencode-token-norm": "scripts/install-local.mjs"
+  },
   "scripts": {
     "build": "tsc",
+    "build:plugin": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --legal-comments=none --outfile=dist/plugin.js",
     "typecheck": "tsc --noEmit",
+    "pretest": "npm run build:plugin",
     "test": "vitest run",
-    "install:local": "node scripts/install-local.mjs",
-    "prepublishOnly": "npm run build"
+    "install:local": "npm run build:plugin && node scripts/install-local.mjs",
+    "prepublishOnly": "npm run build && npm run build:plugin"
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.15.12"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
+    "esbuild": "^0.28.2",
     "typescript": "^5.8.2",
     "vitest": "^5.0.0"
   },
