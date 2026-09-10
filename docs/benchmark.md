@@ -1,10 +1,12 @@
 # Benchmark: plain OpenCode vs OpenCode + token-norm
 
-Status: **methodology plus two completed pilots** (8 paid runs, 2026-09-10,
-opencode 1.18.30, `deepseek-v4-flash`). Pilot 1 (2 small tasks x 2 arms, commit
-`79eaf1a`) cost **$0.0071** and never crossed the announce threshold. Pilot 2
-(1 medium + 1 long task x 2 arms, commit `38549cd`) cost **$0.0289** and
-triggered all three reminders in the long treatment arm. This is a smoke test of
+Status: **methodology plus two completed pilots and one fixture revalidation**
+(10 paid runs, 2026-09-10, opencode 1.18.30, `deepseek-v4-flash`). Pilot 1
+(2 small tasks x 2 arms, commit `79eaf1a`) cost **$0.0071** and never crossed the
+announce threshold. Pilot 2 (1 medium + 1 long task x 2 arms, commit `38549cd`)
+cost **$0.0289** and triggered all three reminders in the long treatment arm.
+The medium fixture was then revised and revalidated for **$0.0099**
+(`2026-09-10T23-54-25`). Total pilot spend **$0.0459**. This is a smoke test of
 the harness and thresholds, not a study. Do not cite it as evidence that the
 plugin reduces cost or tokens.
 
@@ -16,8 +18,10 @@ peak, handoff rate, or task success?
 
 ## Protocol
 
-- **Snapshot.** This repo at commit `79eaf1a` (v0.5.3), worktree `bench/harness`.
-  Task fixtures are copied fresh per run, so no run sees another run's edits.
+- **Snapshot (Pilot 1).** This repo at commit `79eaf1a` (v0.5.3), worktree
+  `bench/harness`. Pilot 2 ran from its own snapshot — commit `38549cd` plus the
+  uncommitted S1/S2 changes described with its results below. Task fixtures are
+  copied fresh per run, so no run sees another run's edits.
 - **Model.** `opencode-go/deepseek-v4-flash`, fixed on the command line with
   `--model`. Recorded per run.
 - **Isolation.** Every run gets its own `HOME`, `XDG_CONFIG_HOME`,
@@ -31,6 +35,11 @@ peak, handoff rate, or task success?
     `scripts/usage-audit.py` to `$XDG_CONFIG_HOME/opencode/scripts/`, mirroring
     `scripts/install-local.mjs`. Plugin defaults apply (`TOKEN_NORM_MODE=warn`,
     budget and handoff enabled).
+- **Artifact identity.** Every run record and run meta file carries
+  `plugin_sha256` and `audit_script_sha256`, the SHA-256 of `dist/plugin.js` and
+  `scripts/usage-audit.py` at run time, so a result can be tied to the exact
+  bundle and audit script that produced it. Records in `bench/results/` from the
+  two pilots predate these fields.
 - **Run.** `opencode run --model <id> --auto --format json "<prompt>"` with cwd =
   the task copy. Wall cap 240 s per run by default (`--timeout`), enforced by the
   harness; pilot 1 ran with `--timeout 75`, pilot 2 with 420 s (medium) and
@@ -52,6 +61,8 @@ peak, handoff rate, or task success?
 | Context peak | max per-call `total` across sessions |
 | Handoff notes | files under the run's `$XDG_DATA_HOME/opencode/handoff/` |
 | Plugin firings | line patterns in the run's `$XDG_DATA_HOME/opencode/token-norm.log`: `announce-threshold at`, `audit-threshold at`, `task-boundary at`, `budget crossing at`, `handoff written to` |
+| Plugin artifact | SHA-256 of `dist/plugin.js`, recorded per run as `plugin_sha256` |
+| Audit script artifact | SHA-256 of `scripts/usage-audit.py`, recorded per run as `audit_script_sha256` |
 | Task success | evaluator exit code |
 
 ## Cost estimate and caps
@@ -148,11 +159,14 @@ arm difference: medium treatment was 12x the baseline gap, long treatment was
 - **Long class works.** Both arms landed in the 60–150 expected band (60 and 66
   tools) and the treatment crossed all three reminders, so the long fixture
   exercises the plugin in a real run.
-- **Medium class missed.** `03-many-bugs` (medium, 16 modules, expected 25–50)
-  produced only 20 tool calls in the treatment arm — below the 25 floor — so no
-  reminder fired. The baseline arm used 36, so the fixture sits near the bottom
-  of the band and needs more modules before the class supports claims.
-  Thresholds were not changed to hide the miss.
+- **Medium class missed, then fixed.** In pilot 2, `03-many-bugs` (medium,
+  16 modules, expected 25–50) produced only 20 tool calls in the treatment arm —
+  below the 25 floor — so no reminder fired, while the baseline arm used 36.
+  Thresholds were not changed to hide the miss. The prompt was revised to require
+  reading and editing each module individually (no shell batch reads, no
+  whole-file rewrites) with an expected band of 30–40 calls, and re-run the same
+  day: baseline 39 / treatment 35 calls, both in band, treatment announce fired
+  at 25 (table below).
 - **No consistent arm signal.** The pilot-1 wall-time gap (treatment ~2.6x
   slower on small tasks) did not replicate: medium treatment was 2.8x slower
   (41.0 → 113.6 s) but long treatment was ~2x faster (193.2 → 98.9 s).
@@ -160,6 +174,22 @@ arm difference: medium treatment was 12x the baseline gap, long treatment was
   per cell this is provider/model variance.
 - **Handoffs stayed at zero**, including the long treatment run in which the
   boundary reminder fired.
+
+### Medium fixture revalidation (2026-09-10T23-54-25)
+
+Both arms re-run on the revised prompt, commit `bfb2dbe`, with the plugin bundle
+and audit script now pinned by their recorded SHA-256s:
+
+| Task class | Task | Arm | Success | Effective fresh | Cost | Wall | Tools | Expected calls | ann/aud/bnd |
+|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|
+| medium | 03-many-bugs | baseline | yes | 25,364 | $0.0055 | 51.6 s | 39 | 30–40 | 0/0/0 |
+| medium | 03-many-bugs | treatment | yes | 18,588 | $0.0043 | 106.4 s | 35 | 30–40 | 1/0/0 |
+
+Total spend **$0.0099**. Both arms sit inside the intended band, so the fixture
+now exercises the announce threshold in a real run; the treatment crossed it at
+25 calls. The behavior instrument
+([evaluation.md](evaluation.md#instrumentation-for-behavior)) found no matching
+cost statement after that announce in this run. N=1 per arm.
 
 ### Limitations (pilot 2)
 
@@ -170,8 +200,9 @@ arm difference: medium treatment was 12x the baseline gap, long treatment was
 - `gap` includes model latency, so it cannot attribute time to the plugin.
 - The startup comparison is n=3 and not statistically meaningful (~30 ms delta
   with overlapping ranges).
-- N=1 per arm per class, one model/provider/machine; the medium miss makes that
-  row descriptive of the fixture, not of the class.
+- N=1 per arm per class, one model/provider/machine; the medium revalidation
+  closes the fixture-size miss, not the sample-size limitation, so those rows
+  remain descriptive.
 
 ## Caveats (pilot 1)
 

@@ -72,3 +72,57 @@ the guardrails reduce spend. Answering that needs a different design, roughly:
 
 Until then, the defensible claims are the mechanical ones: the reminders fire, and
 `handoff` ends the session it was called from.
+
+## Instrumentation for behavior
+
+The tables above measure that a reminder *fired*. They cannot show whether it
+changed what the agent did next. `bench/behavior/analyze.mjs` is the instrument
+for that second question.
+
+### What is measured
+
+For one benchmark run it reads the run's line in `bench/results/*.jsonl`, the
+sibling `*.meta.json`, the run's `data/opencode/token-norm.log`, and the run's
+`data/opencode/opencode.db` (opened read-only). It pairs each timestamped
+threshold event in the log with the assistant parts stored after it in the same
+session and reports, per signal:
+
+| Signal (log event) | Question asked of later assistant text |
+|---|---|
+| `announce-threshold` | Does a later assistant message state remaining calls, caps, or cost, or explicitly address the cost statement? |
+| `audit-threshold` | Does it quote an effective-token number or a cache multiplier? |
+| `task-boundary` | Does it propose a split/handoff or acknowledge the boundary (new files/subsystems, continuation)? |
+| `handoff written to` | Did the old session stop — no part after the note within the grace window (default 5 minutes)? |
+
+Each event emits `fired` (log line present) and `followed` (matching assistant
+text found) or `stopped` (handoff), plus the matched message id, `delta_ms`, and
+a short evidence snippet. Matching scans assistant `text` and `reasoning` parts
+only, so reminder text appended to tool output cannot be mistaken for a
+response. An audit event's search window ends at the next audit, so a later
+checkpoint is never credited to an earlier one. When the log or DB is missing,
+the affected signal is `null`, not `false`.
+
+```
+node bench/behavior/analyze.mjs bench/results/<stamp>.jsonl \
+  [--run-id <run-id>] [--meta <path>] [--handoff-grace-ms N] [--out out.json]
+```
+
+The self-test (`node --test bench/behavior/analyze.test.mjs`) drives synthetic
+events where each signal is present and absent, so the analyzer is verifiable
+without provider spend.
+
+### Status
+
+The instrument has been run read-only over two existing artifact sets:
+
+| Run | Arm | announce | audit | boundary | handoff |
+|---|---|---|---|---|---|
+| Pilot 2 long (`2026-09-10T23-25-40`) | treatment | followed | followed | followed | not fired |
+| Medium revalidation (`2026-09-10T23-54-25`) | treatment | fired, not followed | not fired | not fired | not fired |
+
+Pilot 2's long treatment quoted all three reminders in later assistant text; the
+fresh medium treatment announced at 25 calls with no matching response. That is
+the shape of the open question, not an answer. A `followed: true` means
+keyword-matched assistant text appeared after a reminder; it does not establish
+that the reminder caused it. No control arm has been run under this instrument,
+so this section supports no causal claim.

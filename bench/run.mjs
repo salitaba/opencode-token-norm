@@ -241,6 +241,10 @@ function table(records) {
   return [line(head), widths.map((w) => "-".repeat(w)).join("  "), ...rows.map(line)].join("\n")
 }
 
+function fileHash(path) {
+  return existsSync(path) ? createHash("sha256").update(readFileSync(path)).digest("hex") : null
+}
+
 function treeHash(root) {
   const hash = createHash("sha256")
   const walk = (dir) => {
@@ -260,6 +264,8 @@ function runOne({ taskName, arm, args, opencodeVersion, gitHead, stamp, spent })
   const metaPath = join(taskDir, "meta.json")
   const meta = existsSync(metaPath) ? JSON.parse(readFileSync(metaPath, "utf8")) : {}
   const fixtureBefore = treeHash(join(taskDir, "fixture"))
+  const pluginSha256 = fileHash(join(repo, "dist", "plugin.js"))
+  const auditScriptSha256 = fileHash(join(repo, "scripts", "usage-audit.py"))
 
   const runId = `${stamp}-${arm}-${taskName}`
   const root = join(runsRoot, runId)
@@ -315,6 +321,8 @@ function runOne({ taskName, arm, args, opencodeVersion, gitHead, stamp, spent })
     expected_calls: meta.expected_calls ?? null,
     model: args.model,
     git_head: gitHead,
+    plugin_sha256: pluginSha256,
+    audit_script_sha256: auditScriptSha256,
     opencode_version: opencodeVersion,
     timeout_s: args.timeout,
     wall_ms,
@@ -339,6 +347,8 @@ const args = parseArgs(process.argv.slice(2))
 const tasks = args.tasks.length ? args.tasks : listTasks()
 const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
 args.out = args.out ? resolve(args.out) : join(benchDir, "results", `${stamp}.jsonl`)
+const pluginSha256 = fileHash(join(repo, "dist", "plugin.js"))
+const auditScriptSha256 = fileHash(join(repo, "scripts", "usage-audit.py"))
 mkdirSync(dirname(args.out), { recursive: true })
 writeFileSync(args.out, "")
 writeFileSync(
@@ -348,6 +358,8 @@ writeFileSync(
       model: args.model,
       arms: args.arms,
       tasks,
+      plugin_sha256: pluginSha256,
+      audit_script_sha256: auditScriptSha256,
       timeout_s: args.timeout,
       max_cost_usd: args.maxCost,
       started_at: new Date().toISOString(),

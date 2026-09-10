@@ -1,8 +1,8 @@
 {
   "class": "medium",
   "expected_calls": [
-    25,
-    50
+    30,
+    40
   ],
   "modules": 16,
   "write": "harness-copies-fixture"
