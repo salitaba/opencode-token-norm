@@ -37,10 +37,13 @@ Two halves:
 
 ## Install
 
-Requires OpenCode with plugin support (`@opencode-ai/plugin` ≥ 1.15.12) and
-Node ≥ 22.
-The audit checkpoint additionally needs `python3` — without it, the reminder
-still fires and tells the agent to run the audit manually.
+```sh
+opencode plugin opencode-token-norm --global
+```
+
+Restart OpenCode. That's the whole install: the command registers the package in
+`~/.config/opencode/opencode.json`, and OpenCode caches it at startup. Prefer to
+edit config by hand? Add it to the `plugin` array instead:
 
 ```json
 // ~/.config/opencode/opencode.json
@@ -50,9 +53,10 @@ still fires and tells the agent to run the audit manually.
 }
 ```
 
-Restart OpenCode. That config entry is the whole install — OpenCode fetches the
-package. To run the audit script by hand instead, `npm i opencode-token-norm` in
-a project (below).
+Needs an OpenCode build with plugin support (`@opencode-ai/plugin` ≥ 1.15.12) and
+`python3` for the audit checkpoint — without python3 the reminder still fires and
+tells the agent to run the audit manually. To run the audit script by hand,
+`npm i opencode-token-norm` in a project (below; needs Node ≥ 22).
 
 ---
 

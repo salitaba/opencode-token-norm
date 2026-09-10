@@ -79,10 +79,10 @@ ffmpeg -y -ss "$SS" -i "$RUN/take.mp4" -t "$DUR" \
   -c:v libx264 -crf 20 -preset slow -pix_fmt yuv420p -movflags +faststart \
   "$ASSETS/token-norm-demo.mp4"
 ffmpeg -y -ss "$SS" -t "$DUR" -i "$RUN/take.mp4" \
-  -vf "setpts=${SPEED}*PTS,fps=15,scale=1200:-1:flags=lanczos,palettegen=stats_mode=diff" \
+  -vf "setpts=${SPEED}*PTS,fps=12,scale=900:-1:flags=lanczos,palettegen=max_colors=64:stats_mode=diff" \
   "$RUN/palette.png"
 ffmpeg -y -ss "$SS" -t "$DUR" -i "$RUN/take.mp4" -i "$RUN/palette.png" \
-  -lavfi "setpts=${SPEED}*PTS,fps=15,scale=1200:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3" \
+  -lavfi "setpts=${SPEED}*PTS,fps=12,scale=900:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=none" \
   "$ASSETS/token-norm-demo.gif"
 
 ls -lh "$ASSETS/token-norm-demo.gif" "$ASSETS/token-norm-demo.mp4"
