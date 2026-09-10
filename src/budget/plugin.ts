@@ -20,8 +20,8 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { runAudit } from "../audit.js"
 import { log } from "../log.js"
-import { ANNOUNCE_AT, AUDIT_EVERY, BOUNDARY_AT, CHEAP_TOOLS, MODE } from "../config.js"
-import { blockedReason, evaluateBudget, overPressure } from "./evaluator.js"
+import { ANNOUNCE_AT, AUDIT_EVERY, BOUNDARY_AT, CHEAP_TOOLS, MAX_COST, MAX_EFFECTIVE_TOKENS, MODE } from "../config.js"
+import { blockedReason, budgetMetrics, contextLimitFor, evaluateBudget, overPressure } from "./evaluator.js"
 import { note } from "./format.js"
 import {
   announceReminder,
@@ -31,6 +31,7 @@ import {
   handoffLines,
 } from "./reminders.js"
 import { SEEN_MESSAGES_MAX, state, topTools, track, usage, type SessionState } from "./state.js"
+import { createStatusTool, setStatusProvider, snapshotFrom } from "../status.js"
 
 const HANDOFF_TOOL = "handoff"
 
@@ -58,7 +59,33 @@ function pauseSessionID(event: any): string | undefined {
 }
 
 export const SessionBudgetPlugin: Plugin = async ({ client } = {} as any) => {
+  // The status tool must answer from the same accumulators that enforce the
+  // budget, so the closure that owns `state` and `usage` registers the reader
+  // here. status.ts cannot import this module back (this module imports it);
+  // the registry keeps the tool definition free of a construction dependency.
+  setStatusProvider(async (sessionID) => {
+    const contextLimit = await contextLimitFor(client, sessionID)
+    const rollup = usage.rollup(usage.rootOf(sessionID))
+    const metrics = budgetMetrics(sessionID, rollup, contextLimit)
+    return snapshotFrom({
+      toolCalls: rollup.calls,
+      context: usage.has(sessionID) ? usage.get(sessionID).contextNow : 0,
+      contextLimit,
+      cost: { used: rollup.costUsd, limit: MAX_COST },
+      effectiveTokens: { used: rollup.effectiveTokens, limit: MAX_EFFECTIVE_TOKENS },
+      pressured: metrics.some((m) => m.used >= m.warnAt),
+      exceeded: metrics.some((m) => m.used >= m.limit),
+      mode: MODE,
+    })
+  })
+
   return {
+    // On-demand accounting for exactly the numbers the thresholds below use.
+    // Read-only, no args, and a no-op (zeros) for unknown sessions.
+    tool: {
+      token_norm_status: createStatusTool(),
+    },
+
     // A new user message in an already-large session is the task boundary the
     // norm cares about most, and the one with no mechanism until now. In a
     // 195k-token session the agent had the rule in context, ran the audit,

@@ -14,7 +14,7 @@ import type { Rollup } from "../usage.js"
 import { fmtCount, fmtTokens, fmtUsd } from "./format.js"
 import { usage, type SessionState } from "./state.js"
 
-interface BudgetMetric {
+export interface BudgetMetric {
   key: string
   label: string
   used: number
@@ -31,7 +31,7 @@ const modelContextLimits = new Map<string, number>()
  * are not picked up until opencode restarts; TOKEN_NORM_CONTEXT_LIMIT bypasses
  * the cache entirely. When neither the client lookup nor the env var yields a
  * number, context pressure is simply disabled -- never guessed. */
-async function contextLimitFor(client: any, sessionID: string): Promise<number | undefined> {
+export async function contextLimitFor(client: any, sessionID: string): Promise<number | undefined> {
   if (CONTEXT_LIMIT !== undefined) return CONTEXT_LIMIT
   const s = usage.get(sessionID)
   if (!s.providerID || !s.modelID) return undefined
@@ -51,7 +51,7 @@ async function contextLimitFor(client: any, sessionID: string): Promise<number |
   }
 }
 
-function budgetMetrics(sessionID: string, rollup: Rollup, contextLimit: number | undefined): BudgetMetric[] {
+export function budgetMetrics(sessionID: string, rollup: Rollup, contextLimit: number | undefined): BudgetMetric[] {
   const metrics: BudgetMetric[] = []
   if (MAX_COST !== undefined) {
     metrics.push({ key: "cost", label: "Cost", used: rollup.costUsd, limit: MAX_COST, warnAt: MAX_COST, format: fmtUsd })
