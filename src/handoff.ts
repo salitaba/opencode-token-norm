@@ -82,7 +82,7 @@ function renderHandoff({ task, done, next, files, notes }: HandoffArgs): string 
 export const HandoffPlugin: Plugin = async ({ client, directory }) => {
   // Set while a handoff is waiting for its new session to exist; the event hook
   // below resolves it. `null` means no switch is in flight.
-  let sessionSwitched: (() => void) | null = null
+  let sessionSwitched: { startedAt: number; resolve: () => void } | null = null
 
   return {
     event: async ({ event }) => {
@@ -92,9 +92,14 @@ export const HandoffPlugin: Plugin = async ({ client, directory }) => {
       // Subagent sessions also emit session.created; only a primary (parentless)
       // session is evidence that the TUI's switch landed.
       if (!info?.id || info.parentID) return
-      const resolve = sessionSwitched
+      // A late event from an earlier, already-timed-out switch must not satisfy
+      // this waiter: when the SDK exposes a creation time, only sessions created
+      // after this wait began count. 250ms of slack absorbs clock rounding.
+      const created = info.time?.created
+      if (typeof created === "number" && created < sessionSwitched.startedAt - 250) return
+      const waiter = sessionSwitched
       sessionSwitched = null
-      resolve()
+      waiter.resolve()
     },
 
     tool: {
@@ -154,7 +159,7 @@ export const HandoffPlugin: Plugin = async ({ client, directory }) => {
           // The timestamp is second-precision, so two handoffs from one session
           // in the same second would collide and the second write would silently
           // destroy the first note. The UUID makes the name unique per call.
-          const notePath = path.join(HANDOFF_DIR, `${stamp()}-${randomUUID().slice(0, 8)}-${ctx.sessionID}.md`)
+          const notePath = path.join(HANDOFF_DIR, `${stamp()}-${randomUUID()}-${ctx.sessionID}.md`)
           // Persist BEFORE switching. If the TUI call fails, the handoff still
           // exists on disk and the user can recover it manually; the reverse
           // ordering would lose the note on exactly the failure that matters.
@@ -167,14 +172,21 @@ export const HandoffPlugin: Plugin = async ({ client, directory }) => {
           const prompt = `${body}\n\n_Handoff note: ${notePath}_\n`
 
           const startedAt = Date.now()
+          let settle: (() => void) | null = null
           const switched = new Promise<void>((resolve) => {
-            sessionSwitched = resolve
+            settle = resolve
           })
+          const waiter = { startedAt, resolve: settle! }
+          sessionSwitched = waiter
           await client.tui.executeCommand({ body: { command: "session_new" } })
           const confirmed = await Promise.race([
             switched.then(() => true),
             sleep(SWITCH_WAIT_MS).then(() => false),
           ])
+          // The timeout path must not leave a stale resolver behind: a late
+          // session.created from this dead switch could otherwise satisfy the
+          // NEXT handoff's waiter before its own session exists.
+          if (sessionSwitched === waiter) sessionSwitched = null
           if (!confirmed) {
             log(`${ctx.sessionID} no session.created in ${SWITCH_WAIT_MS}ms; appending after the settle floor`)
           }

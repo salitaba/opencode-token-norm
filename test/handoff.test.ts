@@ -10,7 +10,10 @@ vi.hoisted(() => {
   process.env.TOKEN_NORM_LOG = `${base}${sep}token-norm-handoff-test-${process.pid}.log`
 })
 
+vi.mock("../src/log.js", () => ({ log: vi.fn() }))
+
 import { HandoffPlugin } from "../src/handoff.js"
+import { log } from "../src/log.js"
 
 const DIR = process.env.TOKEN_NORM_HANDOFF_DIR!
 
@@ -128,7 +131,10 @@ describe("handoff tool", () => {
     client.tui.executeCommand.mockImplementation(async () => {
       order.push("session_new")
       await hooks.event!({
-        event: { type: "session.created", properties: { info: { id: "ses_new" } } },
+        event: {
+          type: "session.created",
+          properties: { info: { id: "ses_new", time: { created: Date.now() } } },
+        },
       } as never)
       order.push("created-event")
     })
@@ -138,6 +144,24 @@ describe("handoff tool", () => {
 
     await hooks.tool!.handoff.execute(args, ctx())
     expect(order).toEqual(["session_new", "created-event", "append"])
+  })
+
+  it("ignores a late session.created from a previous timed-out switch", async () => {
+    const { client } = fakeClient(async () => ({ data: [] }))
+    const hooks = await loadHooks(client)
+    vi.mocked(log).mockClear()
+
+    client.tui.executeCommand.mockImplementation(async () => {
+      await hooks.event!({
+        event: {
+          type: "session.created",
+          properties: { info: { id: "ses_stale", time: { created: Date.now() - 60_000 } } },
+        },
+      } as never)
+    })
+
+    await hooks.tool!.handoff.execute(args, ctx())
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("no session.created"))
   })
 
   it("does not overwrite when two handoffs happen in the same second", async () => {

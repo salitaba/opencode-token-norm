@@ -128,7 +128,9 @@ weighted input rather than "the money number."
   returns only a boolean). The append therefore waits for the `session.created`
   event for a parentless session, with the old fixed delay as a floor and
   `TOKEN_NORM_SWITCH_WAIT_MS` as the ceiling. Fast machines behave as before; a
-  slow switch waits for proof instead of guessing.
+  slow switch waits for proof instead of guessing. A late `session.created` from
+  a switch that already timed out is rejected by creation time, so it cannot
+  satisfy a later handoff's wait.
 - **Persisted before the TUI switch.** If the switch fails, the note is already
   on disk. The reverse ordering loses it on precisely the failure that matters.
 - **Refused for subagents.** Plugin tools register for every agent, so a subagent
