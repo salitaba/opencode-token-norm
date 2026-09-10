@@ -277,12 +277,14 @@ design decisions, and why subagents are refused, are in
 ### 6. On-demand status
 
 `token_norm_status` answers the same accounting on demand instead of at a
-threshold: read-only JSON with the session's tool calls, context, cost and
-effective-token usage, plus the `continue | warn | handoff | block`
-recommendation the plugin would give right now. It reads the same accumulators
-the enforcement path uses, so status and reminders cannot disagree; unknown
-sessions report zeros. The tool is registered by the budget plugin, so it is
-absent when that plugin is not loaded.
+threshold: read-only JSON with tool calls, context, cost and effective-token
+usage, plus the `continue | warn | handoff | block` recommendation the plugin
+would give right now. Scopes are explicit in the payload: `budget` figures
+(`toolCalls`, `cost`, `effectiveTokens`) roll up the whole session tree (root
+plus descendants), while `session.context` is the current session's window
+alone. It reads the same accumulators the enforcement path uses, so status and
+reminders cannot disagree; unknown sessions report zeros. The tool is registered
+by the budget plugin, so it is absent when that plugin is not loaded.
 
 ---
 
