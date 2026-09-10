@@ -11,6 +11,8 @@ Usage:
   python3 usage-audit.py --session <id>      # a specific session
   python3 usage-audit.py --top 5             # rank recent sessions by cache reads
   python3 usage-audit.py --top 5 --json      # machine-readable
+  python3 usage-audit.py --receipt           # screenshot-friendly receipt (last session)
+  python3 usage-audit.py --receipt <id>      # receipt for a specific session
 
 DB path: ~/.local/share/opencode/opencode.db (override with OPENCODE_DB).
 """
@@ -20,6 +22,7 @@ import os
 import sqlite3
 import sys
 from collections import Counter, defaultdict
+from datetime import datetime
 from pathlib import Path
 
 DB = Path(os.environ.get("OPENCODE_DB", Path.home() / ".local/share/opencode/opencode.db"))
@@ -31,6 +34,13 @@ def connect() -> sqlite3.Connection:
     c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
     c.row_factory = sqlite3.Row
     return c
+
+
+def last_session_id():
+    c = connect()
+    r = c.execute("select id from session order by time_updated desc limit 1").fetchone()
+    c.close()
+    return r["id"] if r else None
 
 
 def fmt(n: float) -> str:
@@ -156,10 +166,19 @@ def audit(sid: str) -> dict:
     if not r:
         sys.exit(f"no session {sid}")
     calls, hogs = part_series(c, sid)
+    model_id = provider = None
+    if r["model"]:
+        try:
+            m = json.loads(r["model"])
+            model_id, provider = m.get("id"), m.get("providerID")
+        except Exception:
+            model_id = r["model"]
     out = {
         "session": r["id"],
         "title": r["title"],
-        "model": json.loads(r["model"]).get("id") if r["model"] else None,
+        "model": model_id,
+        "provider": provider,
+        "time_updated": r["time_updated"],
         "totals": {
             "input": r["tokens_input"] or 0,
             "output": r["tokens_output"] or 0,
@@ -190,8 +209,79 @@ def audit(sid: str) -> dict:
         out["image_attachments"] = [
             (fp, b) for b, fp in hogs["images"][:6]
         ]
+        out["tool_calls"] = sum(hogs["counts"].values())
+        out["tool_counts"] = dict(hogs["counts"])
     c.close()
     return out
+
+
+RECEIPT_W = 60
+
+
+def render_receipt(a: dict, color: bool = False) -> str:
+    """A 60-col receipt designed to be screenshotted and shared."""
+    def paint(s, code):
+        return f"\033[{code}m{s}\033[0m" if color else s
+
+    def row(label, value):
+        return f"  {label:<18}{value[: RECEIPT_W - 20]}"
+
+    W = RECEIPT_W
+    bar, thin = "=" * W, "-" * W
+    t = a["totals"]
+    eff = t["effective_fresh"]
+    raw = t["input"] + t["cache_read"] + t["cache_write"]
+    ratio = t["cache_read"] / max(1, t["input"] + t["output"])
+    calls = a.get("calls")
+    med_total = a["per_call_total"]["median"] if calls else 0
+
+    if not calls:
+        verdict, vcode = "no model calls recorded", "2"
+    elif med_total > 120_000:
+        verdict, vcode = "HIGH — context bloat drove this session", "31"
+    elif med_total <= 60_000:
+        verdict, vcode = "ok — median context under 60k", "32"
+    else:
+        verdict, vcode = "watch — context creeping past 60k", "33"
+
+    lines = [bar, paint("OPENCODE SESSION RECEIPT".center(W), "1"), bar]
+    lines.append("  " + (a.get("title") or "untitled").strip()[: W - 4])
+    lines.append("  " + a["session"])
+    meta = " · ".join(x for x in (a.get("model"), a.get("provider")) if x)
+    if a.get("time_updated"):
+        stamp = datetime.fromtimestamp(a["time_updated"] / 1000).strftime("%Y-%m-%d %H:%M")
+        meta += (" · " if meta else "") + stamp
+    lines.append("  " + meta[: W - 4])
+    lines.append(thin)
+    lines.append(paint("EFFECTIVE FRESH TOKENS".center(W), "1"))
+    lines.append(paint(fmt(eff).center(W), "1"))
+    lines.append(
+        f"input {fmt(t['input'])} + cache read {fmt(0.1 * t['cache_read'])} "
+        f"+ cache write {fmt(1.25 * t['cache_write'])}".center(W)
+    )
+    if raw > eff > 0:
+        lines.append(f"of {fmt(raw)} raw input · cache discount {1 - eff / raw:.0%}".center(W))
+    lines.append(thin)
+    ratio_s = f"{ratio:.0f}x" if ratio >= 10 else f"{ratio:.1f}x"
+    lines.append(row("cache ratio", f"{ratio_s}  cache read ÷ fresh tokens"))
+    tool_line = str(a.get("tool_calls", 0))
+    top = sorted(a.get("tool_counts", {}).items(), key=lambda kv: -kv[1])[:3]
+    if top:
+        tool_line += "   " + " · ".join(f"{name} {n}" for name, n in top)
+    lines.append(row("tool calls", tool_line))
+    if calls:
+        lines.append(row(
+            "context / call",
+            f"{fmt(a['per_call_total']['median'])} median · {fmt(a['per_call_total']['max'])} peak",
+        ))
+        lines.append(row("system floor", f"{fmt(a['first_call_total'])} (first call)"))
+    lines.append(row("output", fmt(t["output"])))
+    if t["cost_usd"] > 0:
+        lines.append(row("cost", f"${t['cost_usd']:.4f}"))
+    lines.append(thin)
+    lines.append(row("verdict", paint(verdict, vcode)))
+    lines.extend([bar, "  enforce the budget, not the advice", "  npm i opencode-token-norm", bar])
+    return "\n".join(lines)
 
 
 def rank(top: int) -> list:
@@ -227,8 +317,28 @@ def main():
     g.add_argument("--last", action="store_true", help="most recently updated session")
     g.add_argument("--session", metavar="ID", help="session id")
     g.add_argument("--top", type=int, metavar="N", help="rank the N most recent sessions")
+    g.add_argument(
+        "--receipt",
+        nargs="?",
+        const="",
+        metavar="ID",
+        help="60-col shareable receipt (default: most recent session)",
+    )
     ap.add_argument("--json", action="store_true", help="raw json output")
+    ap.add_argument("--no-color", action="store_true", help="disable ANSI color in --receipt")
     args = ap.parse_args()
+
+    if args.receipt is not None:
+        sid = args.receipt or last_session_id()
+        if not sid:
+            sys.exit("no session found")
+        a = audit(sid)
+        if args.json:
+            print(json.dumps(a, indent=2))
+            return
+        color = sys.stdout.isatty() and not args.no_color and not os.environ.get("NO_COLOR")
+        print(render_receipt(a, color))
+        return
 
     if args.top:
         rows = rank(args.top)
@@ -248,10 +358,7 @@ def main():
     if args.session:
         sid = args.session
     elif args.last:
-        c = connect()
-        r = c.execute("select id from session order by time_updated desc limit 1").fetchone()
-        c.close()
-        sid = r["id"] if r else None
+        sid = last_session_id()
     if not sid:
         sys.exit("no session found")
     a = audit(sid)

@@ -179,6 +179,8 @@ scaring the agent off them makes sessions more expensive, not less.
 
 ```bash
 python3 node_modules/opencode-token-norm/scripts/usage-audit.py --last
+python3 node_modules/opencode-token-norm/scripts/usage-audit.py --receipt
+python3 node_modules/opencode-token-norm/scripts/usage-audit.py --receipt <session-id>
 python3 node_modules/opencode-token-norm/scripts/usage-audit.py --top 5
 python3 node_modules/opencode-token-norm/scripts/usage-audit.py --top 5 --json
 ```
