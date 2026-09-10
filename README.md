@@ -5,6 +5,7 @@
 [![license](https://img.shields.io/npm/l/opencode-token-norm)](https://github.com/salitaba/opencode-token-norm/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/salitaba/opencode-token-norm?style=social)](https://github.com/salitaba/opencode-token-norm)
 [![GitHub release](https://img.shields.io/github/v/release/salitaba/opencode-token-norm)](https://github.com/salitaba/opencode-token-norm/releases/latest)
+[![release workflow](https://github.com/salitaba/opencode-token-norm/actions/workflows/release.yml/badge.svg)](https://github.com/salitaba/opencode-token-norm/actions/workflows/release.yml)
 
 **Your token rules are advice. This makes them mechanical.**
 
@@ -56,6 +57,8 @@ Two halves, either one disableable:
 - [Run the audit yourself](#run-the-audit-yourself)
 - [Pairs with your `AGENTS.md`](#pairs-with-your-agentsmd)
 - [Further reading](#further-reading)
+- [Links](#links)
+- [License](#license)
 
 ---
 
@@ -373,6 +376,7 @@ point back at the file that does.
 ## Links
 
 - [Source](https://github.com/salitaba/opencode-token-norm) · [Issues](https://github.com/salitaba/opencode-token-norm/issues) · [npm](https://www.npmjs.com/package/opencode-token-norm)
+- [Changelog](https://github.com/salitaba/opencode-token-norm/blob/main/CHANGELOG.md) · [Contributing](https://github.com/salitaba/opencode-token-norm/blob/main/CONTRIBUTING.md) · [Security](https://github.com/salitaba/opencode-token-norm/blob/main/SECURITY.md)
 - If this plugin saved you tokens, a star helps others find it.
 
 ---
