@@ -6,6 +6,7 @@ vi.hoisted(() => {
   const sep = base.endsWith("/") ? "" : "/"
   process.env.TOKEN_NORM_HANDOFF_DIR = `${base}${sep}token-norm-handoff-test-${process.pid}`
   process.env.TOKEN_NORM_SETTLE_MS = "0"
+  process.env.TOKEN_NORM_LOG = `${base}${sep}token-norm-handoff-test-${process.pid}.log`
 })
 
 import { HandoffPlugin } from "../src/handoff.js"
@@ -103,6 +104,15 @@ describe("handoff tool", () => {
 
     const appended = client.tui.appendPrompt.mock.calls[0][0] as any
     expect(appended.body.text).toContain(result.metadata.notePath)
+  })
+
+  it("keeps the persisted note when the TUI switch fails", async () => {
+    const { client } = fakeClient(async () => ({ data: [] }))
+    client.tui.executeCommand.mockRejectedValueOnce(new Error("tui gone"))
+    const handoff = await load(client)
+
+    await expect(handoff.execute(args, ctx())).rejects.toThrow("tui gone")
+    expect(fs.readdirSync(DIR)).toHaveLength(1)
   })
 
   it("submit: false stops at the pre-filled prompt", async () => {

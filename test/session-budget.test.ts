@@ -113,6 +113,39 @@ describe("SessionBudgetPlugin", () => {
     expect(unknown.context).toHaveLength(0)
   })
 
+  it("arms the boundary on the first call at or past the threshold", async () => {
+    const below = "ses_edge_below"
+    await calls(below, 39)
+    await userMessage(below, "msg_below")
+    expect(await callTool(below)).not.toContain("TASK BOUNDARY")
+
+    const at = "ses_edge_at"
+    await calls(at, 39)
+    await userMessage(at, "msg_arm")
+    await calls(at, 1)
+    await userMessage(at, "msg_fire")
+    expect(await callTool(at)).toContain("TASK BOUNDARY")
+  })
+
+  it("starts from zero in a fresh process (no rehydration after restart)", async () => {
+    await calls("ses_restart", 25)
+
+    vi.resetModules()
+    const fresh = await import("../src/session-budget.js")
+    const freshHooks = await fresh.SessionBudgetPlugin({} as never)
+
+    let last = ""
+    for (let i = 0; i < 25; i++) {
+      const output = blank()
+      await freshHooks["tool.execute.after"]!(
+        { tool: "read", sessionID: "ses_restart", callID: "call_1", args: {} },
+        output,
+      )
+      last = output.output
+    }
+    expect(last).toContain("25 tool calls")
+  })
+
   it("evicts state when a session is deleted", async () => {
     const s = "ses_deleted"
     await calls(s, 25)
