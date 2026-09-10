@@ -72,5 +72,6 @@ described in the README), then restart OpenCode.
   tool still works.
 - `TOKEN_NORM_HANDOFF=0`: restart, confirm the `handoff` tool is gone.
 
-Record which OS and OpenCode build you ran this on when reporting results —
-the compatibility matrix in the README depends on it.
+Record which OS and OpenCode build you ran this on when reporting results, and
+add a row to [docs/compatibility.md](compatibility.md) — that table is the
+real-world evidence behind the README's compatibility claims.

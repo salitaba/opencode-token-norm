@@ -76,6 +76,10 @@ fires and tells the agent to run the audit itself.
 | Python | 3.x, optional — audit checkpoint only |
 | OS | Linux, macOS, Windows (CI) |
 
+Per-build verification results live in [docs/compatibility.md](docs/compatibility.md).
+The unit suite mocks the OpenCode runtime, so that table is the real-world
+evidence behind these claims.
+
 **Check it loaded.** Nothing surfaces until call 25, so a silent install looks
 like a working one. Thresholds are logged; an empty log after a short session
 means nothing crossed one, not that the plugin is missing:
