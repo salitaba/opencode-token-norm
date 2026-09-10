@@ -84,13 +84,39 @@ described in the README), then restart OpenCode.
 ### Context-pressure validation
 
 The context formula (`input + cache.read + cache.write + output`) is the one
-number that can only be validated against a real compaction:
+number that has no unit test behind it. It was checked offline against recorded
+sessions in `~/.local/share/opencode/opencode.db` (2026-09-11), comparing the
+plugin's `contextNow` at the last pre-compaction main step with OpenCode's own
+`tokens.total` for that step — the number OpenCode's overflow check
+(`SessionCompaction.isOverflow`) consumes:
+
+| Session prefix | Provider / model | contextNow | tokens.total | diff |
+|---|---|---|---|---|
+| `ses_0583a7938` | openai / gpt-5.6-luna | 352,295 | 352,304 | −0.003% |
+| `ses_03e0920fa` | openai / gpt-5.6-luna | 352,690 | 352,817 | −0.04% |
+| `ses_039a059c4` | openai / gpt-5.6-luna | 351,982 | 352,533 | −0.16% |
+| `ses_fea7683d3` | opencode-go / deepseek-v4-flash | 268,439 | 268,439 | 0% |
+
+All deltas are the last step's `reasoning` tokens (0–551 here): OpenCode stores
+`total = input + output + reasoning + cache.read + cache.write` while the plugin
+formula omits `reasoning`. Across 61,050 recorded step-finish parts the identity
+held for 99.8% (remainder: zero-token steps).
+
+Do **not** validate against the compaction summarize call's prompt. Since
+OpenCode 1.18.x compaction is tail-based (`part type:"compaction"` with
+`auto`/`overflow`/`tail_start_id`): it summarizes the head and keeps recent
+turns, so the summarize prompt ran 87k–198k in these sessions while the live
+context was 268k–352k. The proactive pre-flight estimate
+(`SessionCompaction.compactIfNeeded`) is computed in memory and is not persisted
+to the DB or the log, so it cannot be replayed offline.
+
+To validate against a compaction in a live session:
 
 - Run in `observe` mode. Leave `TOKEN_NORM_CONTEXT_LIMIT` unset to exercise the
   model-limit lookup (requires a known provider/model), or set it to force a
   small window.
 - Work until a `budget crossing` line with `context` appears in the log, and
-  compare its `used` value with the pre-compaction window reported by
+  compare its `used` value with the last pre-compaction step reported by
   `usage-audit.py --session <id>`.
 - If the model lookup finds no limit, context pressure stays off by design; set
   `TOKEN_NORM_CONTEXT_LIMIT` explicitly.
