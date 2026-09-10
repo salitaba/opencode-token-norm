@@ -121,6 +121,50 @@ function sessionIds(env, db) {
   return r.stdout.split("\n").filter(Boolean)
 }
 
+function pct(values, q) {
+  if (values.length === 0) return null
+  const s = [...values].sort((a, b) => a - b)
+  return +s[Math.min(s.length - 1, Math.floor(q * s.length))].toFixed(1)
+}
+
+/** Per-tool-call wall latency from tool part timestamps. `exec` is the tool
+ * handler itself; `gap` is the interval from the previous tool's end to the
+ * next tool's start, i.e. model turn + plugin hook + scheduler. The plugin's
+ * own contribution is a subset of `gap`, not the whole of it. */
+function toolTimings(db, env) {
+  const code =
+    "import json,os,sqlite3;" +
+    "c=sqlite3.connect('file:'+os.environ['OPENCODE_DB']+'?mode=ro',uri=True);" +
+    "q=\"select json_extract(data,'$.state.time.start'), json_extract(data,'$.state.time.end') from part where json_extract(data,'$.type')='tool'\";" +
+    "print(json.dumps([[s,e] for s,e in c.execute(q) if s is not None and e is not None]))"
+  const r = shell("python3", ["-c", code], { env: { ...env, OPENCODE_DB: db } })
+  if (r.status !== 0 || !r.stdout) return { n: 0 }
+  let rows
+  try {
+    rows = JSON.parse(r.stdout)
+  } catch {
+    return { n: 0 }
+  }
+  rows.sort((a, b) => a[0] - b[0])
+  const exec = []
+  const gaps = []
+  for (let i = 0; i < rows.length; i++) {
+    exec.push(rows[i][1] - rows[i][0])
+    if (i > 0) {
+      const g = rows[i][0] - rows[i - 1][1]
+      if (g >= 0) gaps.push(g)
+    }
+  }
+  return {
+    n: rows.length,
+    exec_median_ms: pct(exec, 0.5),
+    exec_p95_ms: pct(exec, 0.95),
+    gap_median_ms: pct(gaps, 0.5),
+    gap_p95_ms: pct(gaps, 0.95),
+    gap_max_ms: gaps.length ? +Math.max(...gaps).toFixed(1) : null,
+  }
+}
+
 function collect(db, env) {
   const empty = {
     sessions: 0,
@@ -134,6 +178,7 @@ function collect(db, env) {
     tool_calls: 0,
     context_peak: 0,
     first_call_total: null,
+    per_call: null,
   }
   if (!existsSync(db)) return empty
   const ids = sessionIds(env, db)
@@ -168,6 +213,7 @@ function collect(db, env) {
           : Math.min(total.first_call_total, a.first_call_total)
     }
   }
+  total.per_call = toolTimings(db, env)
   return total
 }
 
@@ -176,7 +222,7 @@ function usd(v) {
 }
 
 function table(records) {
-  const head = ["arm", "task", "ok", "eff.tok", "cost", "wall", "tools", "peak", "handoff", "ann/aud/bnd"]
+  const head = ["arm", "task", "ok", "eff.tok", "cost", "wall", "tools", "gap.med", "peak", "handoff", "ann/aud/bnd"]
   const rows = records.map((r) => [
     r.arm,
     r.task,
@@ -185,6 +231,7 @@ function table(records) {
     usd(r.metrics.cost_usd),
     `${(r.wall_ms / 1000).toFixed(1)}s${r.timed_out ? "!" : ""}`,
     String(r.metrics.tool_calls),
+    r.metrics.per_call?.gap_median_ms != null ? `${r.metrics.per_call.gap_median_ms}ms` : "-",
     String(r.metrics.context_peak),
     String(r.handoff_notes),
     `${r.log.announce}/${r.log.audit}/${r.log.boundary}`,
@@ -210,6 +257,8 @@ function treeHash(root) {
 function runOne({ taskName, arm, args, opencodeVersion, gitHead, stamp, spent }) {
   const taskDir = join(benchDir, "tasks", taskName)
   const prompt = readFileSync(join(taskDir, "prompt.txt"), "utf8").trim()
+  const metaPath = join(taskDir, "meta.json")
+  const meta = existsSync(metaPath) ? JSON.parse(readFileSync(metaPath, "utf8")) : {}
   const fixtureBefore = treeHash(join(taskDir, "fixture"))
 
   const runId = `${stamp}-${arm}-${taskName}`
@@ -262,6 +311,8 @@ function runOne({ taskName, arm, args, opencodeVersion, gitHead, stamp, spent })
     started_at: started,
     arm,
     task: taskName,
+    task_class: meta.class ?? null,
+    expected_calls: meta.expected_calls ?? null,
     model: args.model,
     git_head: gitHead,
     opencode_version: opencodeVersion,

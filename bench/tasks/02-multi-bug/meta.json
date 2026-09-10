@@ -1,0 +1,7 @@
+{
+  "class": "small",
+  "expected_calls": [
+    5,
+    15
+  ]
+}

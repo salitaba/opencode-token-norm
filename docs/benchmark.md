@@ -1,9 +1,12 @@
 # Benchmark: plain OpenCode vs OpenCode + token-norm
 
-Status: **methodology plus a completed 4-run pilot** (2 tasks x 2 arms x 1 run,
-2026-09-10, opencode 1.18.30, commit `79eaf1a`, spend **$0.0071** of a $0.25 pilot cap).
-It is a smoke test of the harness, not a study. Do not cite it as evidence that
-the plugin reduces cost or tokens.
+Status: **methodology plus two completed pilots** (8 paid runs, 2026-09-10,
+opencode 1.18.30, `deepseek-v4-flash`). Pilot 1 (2 small tasks x 2 arms, commit
+`79eaf1a`) cost **$0.0071** and never crossed the announce threshold. Pilot 2
+(1 medium + 1 long task x 2 arms, commit `38549cd`) cost **$0.0289** and
+triggered all three reminders in the long treatment arm. This is a smoke test of
+the harness and thresholds, not a study. Do not cite it as evidence that the
+plugin reduces cost or tokens.
 
 ## Question
 
@@ -30,8 +33,9 @@ peak, handoff rate, or task success?
     budget and handoff enabled).
 - **Run.** `opencode run --model <id> --auto --format json "<prompt>"` with cwd =
   the task copy. Wall cap 240 s per run by default (`--timeout`), enforced by the
-  harness; the pilot ran with `--timeout 75`. Runs are sequential, one per arm
-  per task (no repeats, no warmup).
+  harness; pilot 1 ran with `--timeout 75`, pilot 2 with 420 s (medium) and
+  600 s (long). Runs are sequential, one per arm per task (no repeats, no
+  warmup).
 - **Tasks.** Fixture dirs under `bench/tasks/<name>/` with `prompt.txt`,
   `fixture/`, and an evaluator `eval.mjs` that lives outside the workspace.
   Evaluator exit 0 = success; it imports the workspace code directly so editing
@@ -43,7 +47,7 @@ peak, handoff rate, or task success?
 |---|---|
 | Effective fresh tokens | `input + 0.1*cache_read + 1.25*cache_write`, summed over all sessions in the run's DB (`scripts/usage-audit.py`) |
 | Total cost (USD) | provider-reported `cost` column, summed over sessions |
-| Wall time | harness clock, capped at the run's `--timeout` (240 s default, 75 s in the pilot) |
+| Wall time | harness clock, capped at the run's `--timeout` (240 s default; 75 s pilot 1, 420/600 s pilot 2) |
 | Tool calls | count of `tool` parts (`scripts/usage-audit.py`) |
 | Context peak | max per-call `total` across sessions |
 | Handoff notes | files under the run's `$XDG_DATA_HOME/opencode/handoff/` |
@@ -55,11 +59,12 @@ peak, handoff rate, or task success?
 `deepseek-v4-flash` list price (models.dev cache): $0.15/M input, $0.60/M output,
 $0.003/M cache read. Pilot = 2 tasks x 2 arms = 4 runs; expected well under
 $0.10. Harness hard cap defaults to **$1.00** provider-reported spend
-(`--max-cost`), then it stops; the pilot used `--max-cost 0.25`. Per-run wall
-cap defaults to 240 s; the pilot used 75 s. The full 20-task study is out of
-scope and requires explicit approval.
+(`--max-cost`), then it stops; pilot 1 used `--max-cost 0.25`, pilot 2 used
+0.40 (medium) and 0.60 (long). Per-run wall cap defaults to 240 s; pilot 1 used
+75 s, pilot 2 used 420 s (medium) and 600 s (long). The full 20-task study is
+out of scope and requires explicit approval.
 
-## Pilot results
+## Pilot 1 results: small tasks (2026-09-10)
 
 Run 2026-09-10 22:49 UTC; raw records in `bench/results/2026-09-10T22-49-51.jsonl`.
 Plugin firings column is announce / audit / boundary counts.
@@ -87,7 +92,88 @@ every fixture hash was unchanged after runs. What the pilot shows:
   attempt did show the announce reminder firing at 26 tool calls in the
   treatment arm, which the pilot tasks are too small to reach.
 
-## Caveats
+## Pilot 2 results: medium and long classes (2026-09-10)
+
+Second pilot, run 2026-09-10 23:20–23:31 UTC, to check that the harness
+exercises the plugin on the two new task classes and to see where the time
+goes. Worktree at commit `38549cd` with the uncommitted S1/S2 changes applied
+and `dist/plugin.js` rebuilt. Raw records: `bench/results/pilot-medium.jsonl`
+and `bench/results/pilot-long.jsonl`; provider-free latency record:
+`bench/results/latency-2026-09-10T23-20-41.json`. Caps: `--max-cost 0.40
+--timeout 420` (medium), `--max-cost 0.60 --timeout 600` (long).
+
+| Task class | Task | Arm | Success | Effective fresh | Cost | Wall | Tools | Expected calls | gap.med | exec.med | Context peak | Handoffs | ann/aud/bnd |
+|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|
+| medium | 03-many-bugs | baseline | yes | 26,727 | $0.0062 | 41.0 s | 36 | 25–50 | 397 ms | 19 ms | 18,108 | 0 | 0/0/0 |
+| medium | 03-many-bugs | treatment | yes | 38,760 | $0.0048 | 113.6 s | 20 | 25–50 | 4,778 ms | 10 ms | 14,489 | 0 | 0/0/0 |
+| long | 04-long-sweep | baseline | yes | 47,736 | $0.0084 | 193.2 s | 60 | 60–150 | 2,596 ms | 8 ms | 23,496 | 0 | 0/0/0 |
+| long | 04-long-sweep | treatment | yes | 37,047 | $0.0096 | 98.9 s | 66 | 60–150 | 345 ms | 13 ms | 26,582 | 0 | 1/1/1 |
+
+All four runs passed their evaluator, no run timed out, and all four fixture
+hashes were unchanged. Total spend **$0.0289** ($0.0110 medium + $0.0180 long).
+The long treatment arm is the first paid run in which the plugin fired, all in
+one `opencode run` process: `announce-threshold at 25 calls (read 20, bash 5)`,
+`audit-threshold at 60 calls (read 30, edit 25, bash 5)`, and `task-boundary at
+65 calls`. Announce and audit are call-count thresholds (25, then every 60);
+boundary is not — it fires on the next new user message once the session passed
+`BOUNDARY_AT` (`src/config.ts`), so the microbench injected it at call 41 and
+this run hit it at 65. No budget crossing and no handoff note was written in
+any arm.
+
+### Microbench decomposition
+
+`bench/latency.mjs` replays 130 synthetic tool calls through the real bundled
+`dist/plugin.js` hooks with no provider spend, against a no-op baseline; full
+record in `latency-2026-09-10T23-20-41.json`:
+
+| Component | Measurement |
+|---|---|
+| Plugin hook, per call | median **0.004 ms**, p95 0.059 ms |
+| Announce injection (call 25) | +650 B, 1.1 ms once |
+| Boundary injection (call 41) | +806 B, 0.07 ms once |
+| Audit injections (calls 60, 120) | +682/683 B, ~46.2 ms each |
+| Audit spawn cost | no-op `python3` median 18.5 ms; full audit median 45.2 ms for ~1,161 B |
+| `opencode serve` startup | baseline median 1,193 ms vs treatment 1,224 ms (n=3 each) |
+
+The plugin hook itself is negligible; the only recurring material cost is the
+audit's Python spawn (~45 ms) on threshold calls. In the paid runs, `gap.med` is
+the interval from one tool's end to the next tool's start — model turn + plugin
+hook + scheduler — so the hook is a small subset of what it shows; `exec.med`
+is the tool handler itself (≤19 ms in every arm). Neither shows a consistent
+arm difference: medium treatment was 12x the baseline gap, long treatment was
+0.13x the baseline gap.
+
+### Findings and task-design miss
+
+- **Long class works.** Both arms landed in the 60–150 expected band (60 and 66
+  tools) and the treatment crossed all three reminders, so the long fixture
+  exercises the plugin in a real run.
+- **Medium class missed.** `03-many-bugs` (medium, 16 modules, expected 25–50)
+  produced only 20 tool calls in the treatment arm — below the 25 floor — so no
+  reminder fired. The baseline arm used 36, so the fixture sits near the bottom
+  of the band and needs more modules before the class supports claims.
+  Thresholds were not changed to hide the miss.
+- **No consistent arm signal.** The pilot-1 wall-time gap (treatment ~2.6x
+  slower on small tasks) did not replicate: medium treatment was 2.8x slower
+  (41.0 → 113.6 s) but long treatment was ~2x faster (193.2 → 98.9 s).
+  Effective fresh tokens and cost also flip direction between classes. At N=1
+  per cell this is provider/model variance.
+- **Handoffs stayed at zero**, including the long treatment run in which the
+  boundary reminder fired.
+
+### Limitations (pilot 2)
+
+- In paid runs the plugin's counters live in memory for one `opencode run`
+  process, so a task split across multiple invocations would never reach a
+  threshold. Both pilot-2 tasks ran as a single invocation; the results
+  describe single-session behavior only.
+- `gap` includes model latency, so it cannot attribute time to the plugin.
+- The startup comparison is n=3 and not statistically meaningful (~30 ms delta
+  with overlapping ranges).
+- N=1 per arm per class, one model/provider/machine; the medium miss makes that
+  row descriptive of the fixture, not of the class.
+
+## Caveats (pilot 1)
 
 - N=2 tasks, one run per arm, one model/provider, one snapshot, one machine.
   Results are descriptive only, not causal; run-to-run variance is unmeasured.

@@ -1,0 +1,13 @@
+{
+  "model": "opencode-go/deepseek-v4-flash",
+  "arms": [
+    "baseline",
+    "treatment"
+  ],
+  "tasks": [
+    "03-many-bugs"
+  ],
+  "timeout_s": 420,
+  "max_cost_usd": 0.4,
+  "started_at": "2026-09-10T23:22:51.579Z"
+}
