@@ -39,6 +39,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "install:local": "node scripts/install-local.mjs",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
