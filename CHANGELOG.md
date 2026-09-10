@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-11
+
+### Added
+
+- `token_norm_status`: a read-only tool that reports the session's tool calls,
+  context usage, cost and effective tokens against the configured limits, plus
+  the `continue | warn | handoff | block` recommendation enforcement would give
+  right now. It reads the same accumulators as the reminders, so the two cannot
+  disagree; unknown sessions report zeros, and the tool is absent when the
+  budget plugin is not loaded.
+- Benchmark harness (`bench/run.mjs`) with two fixture tasks, plus the pilot
+  methodology and results write-up in `docs/benchmark.md`.
+
 ## [0.5.3] - 2026-09-11
 
 ### Fixed
@@ -108,7 +121,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `TokenNormBudget`, which counts tool calls and staples reminders at thresholds, and `TokenNormHandoff`, which collapses the session split into a single tool call.
 
-[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.0...v0.5.1
