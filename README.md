@@ -188,6 +188,38 @@ python3 node_modules/opencode-token-norm/scripts/usage-audit.py --top 5 --json
 `effective fresh tokens = input + 0.1·cache_read + 1.25·cache_write` — the number
 that maps to money. Raw `cache_read` does not.
 
+### Shareable receipt
+
+`--receipt` prints a paste-ready snapshot of any session — same numbers, laid out
+for a screenshot. The verdict is honest, not flattering: sessions that creep past
+the budget say so. Colors appear only on a TTY; `--no-color` forces plain text.
+
+```
+============================================================
+                  OPENCODE SESSION RECEIPT
+============================================================
+  Core package test coverage: kernel + messaging suites
+  ses_f75afcd6dffeRZXwjB7EgV2czv
+  cc/claude-opus-5 · 9router-anthropic · 2026-09-10 11:47
+------------------------------------------------------------
+                   EFFECTIVE FRESH TOKENS
+                            687k
+       input 56k + cache read 394k + cache write 237k
+           of 4.2M raw input · cache discount 84%
+------------------------------------------------------------
+  cache ratio       40x  cache read ÷ fresh tokens
+  tool calls        52   bash 37 · read 9 · todowrite 2
+  context / call    84k median · 122k peak
+  system floor      27k (first call)
+  output            44k
+------------------------------------------------------------
+  verdict           watch — context creeping past 60k
+============================================================
+  enforce the budget, not the advice
+  npm i opencode-token-norm
+============================================================
+```
+
 ---
 
 ## Pairs with
