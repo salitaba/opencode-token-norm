@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-11
+
+### Fixed
+
+- `handoff` disarms its session-switch waiter on every exit path, not just the
+  timeout: a thrown `executeCommand` or any other error now clears it via
+  `try/finally`, so a late `session.created` can no longer satisfy a stale
+  resolver and clear the next handoff's waiter before its own session exists.
+- README no longer claims the plugin "adds no advice"; the accurate claim is
+  that it does not rely on agent-authored advice as its enforcement mechanism.
+
 ## [0.5.1] - 2026-09-11
 
 ### Fixed
@@ -84,7 +95,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `TokenNormBudget`, which counts tool calls and staples reminders at thresholds, and `TokenNormHandoff`, which collapses the session split into a single tool call.
 
-[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/salitaba/opencode-token-norm/compare/v0.4.0...v0.4.1
