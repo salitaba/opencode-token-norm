@@ -1,6 +1,6 @@
 {
   "name": "opencode-token-norm",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "OpenCode plugin for token-budget guardrails: counts budgeted tool calls, injects reminders at thresholds, audits usage automatically, and makes session handoff a single tool call",
   "type": "module",
   "license": "MIT",
