@@ -41,6 +41,23 @@ Two halves, either one disableable:
 
 ---
 
+## Contents
+
+- [Install](#install)
+- [What it actually does](#what-it-actually-does)
+  - [1. Task boundary detection](#1-task-boundary-detection-the-missing-enforcement)
+  - [2. Cost statement at 25 calls](#2-cost-statement-at-25-calls--once-per-session)
+  - [3. Audit checkpoint every 60 calls](#3-audit-checkpoint-every-60-calls--already-run)
+  - [4. Compaction context](#4-compaction-context)
+  - [5. The `handoff` tool](#5-the-handoff-tool)
+- [Safety](#safety)
+- [Configuration](#configuration)
+- [Run the audit yourself](#run-the-audit-yourself)
+- [Pairs with your `AGENTS.md`](#pairs-with-your-agentsmd)
+- [Further reading](#further-reading)
+
+---
+
 ## Install
 
 ```sh
@@ -48,16 +65,7 @@ opencode plugin opencode-token-norm --global
 ```
 
 Restart OpenCode. That is the whole install — the command registers the package
-in `~/.config/opencode/opencode.json` and OpenCode caches it at startup. If you
-prefer editing config by hand, add it to the `plugin` array instead:
-
-```json
-// ~/.config/opencode/opencode.json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-token-norm"]
-}
-```
+in `~/.config/opencode/opencode.json` and OpenCode caches it at startup.
 
 Requires an OpenCode build with plugin support (`@opencode-ai/plugin` ≥ 1.15.12),
 and `python3` for the audit checkpoint. Without python3 nothing breaks: the
@@ -69,9 +77,9 @@ needs Node ≥ 22.
 exactly like a working one. Every threshold the plugin fires is logged, so after
 a session long enough to trigger one:
 
-```sh
-tail ~/.local/share/opencode/token-norm.log
-# 2026-09-10T11:47:02.913Z ses_f75afcd6 announce-threshold at 25 calls (bash 14, read 9, grep 4)
+```console
+$ tail ~/.local/share/opencode/token-norm.log
+2026-09-10T11:47:02.913Z ses_f75afcd6 announce-threshold at 25 calls (bash 14, read 9, grep 4)
 ```
 
 An empty file after a six-call session means it is working, not missing — nothing
@@ -101,7 +109,7 @@ per-task; nothing enforced that.
 Now, when a new user message arrives in a session already past `BOUNDARY_AT`
 calls (default 40), the next tool call carries this:
 
-```
+```text
 TOKEN NORM -- new request arrived 47 tool calls deep. This is a TASK BOUNDARY.
 A prior "do everything" / "don't ask" was scoped to the PREVIOUS task. It does not carry.
 ...
@@ -144,7 +152,7 @@ So the plugin runs the audit itself. The command is cheap, deterministic, and
 opens OpenCode's sqlite DB **read-only**. The result arrives stapled to output
 the agent is already reading:
 
-```
+```text
 TOKEN NORM -- 60 tool calls. Audit checkpoint (ran for you):
 
 totals  : input 23k  output 15k  cache_read 891k  cache_write 87k
@@ -175,7 +183,7 @@ to continue. The rule loses to friction, not to disagreement.
 
 One tool call instead:
 
-```
+```js
 handoff({
   task:  "Fix token expiry off-by-one in auth middleware",
   done:  "Diagnosed: TokenValidator.isExpired() at /repo/src/auth/token.ts:88 uses < not <=",
@@ -276,7 +284,7 @@ The audit script ships inside the package, and reads the same DB the plugin does
 In a project where you installed it (`npm i opencode-token-norm`), run it from
 that project root:
 
-```bash
+```sh
 A=node_modules/opencode-token-norm/scripts/usage-audit.py
 
 python3 $A --last                  # most recently updated session
@@ -292,7 +300,7 @@ Session IDs come from `--top`, or from the `token-norm.log` lines above.
 
 One number carries the section:
 
-```
+```text
 effective fresh tokens = input + 0.1·cache_read + 1.25·cache_write
 ```
 
@@ -313,7 +321,7 @@ text; `--no-color` or `NO_COLOR=1` forces it in a terminal too.
 Run it on your worst session. That verdict argues the case better than any
 benchmark could.
 
-```
+```text
 ============================================================
                   OPENCODE SESSION RECEIPT
 ============================================================
@@ -348,6 +356,8 @@ leaves the rest to you — read windows, smallest test target, subagent delegati
 output caps. A counter cannot know any of those. The reminders are written to
 point back at the file that does.
 
+---
+
 ## Further reading
 
 - [**Advice vs. enforcement**](https://github.com/salitaba/opencode-token-norm/blob/main/docs/advice-vs-enforcement.md)
@@ -356,6 +366,8 @@ point back at the file that does.
 - [**Post-mortem**](https://github.com/salitaba/opencode-token-norm/blob/main/docs/post-mortem.md)
   — the session that audited itself, reported 3.0M tokens of waste, and kept
   going anyway. Every threshold here traces back to a specific moment in it.
+
+---
 
 ## Links
 
