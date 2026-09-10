@@ -66,7 +66,36 @@ described in the README), then restart OpenCode.
 - The rebuilt context must include `Session budget at compaction` with the call
   count.
 
-## 8. Kill switches
+## 8. Budgets and modes
+
+- Set `TOKEN_NORM_MAX_TOOL_CALLS=3` and restart.
+- At the third budgeted call, the tool output must carry the budget status block
+  (`TOKEN NORM -- BUDGET`, `Tool calls: 3 / 3`). It must not repeat on call four.
+- Set `TOKEN_NORM_MODE=observe` and restart: the status block must NOT appear,
+  but `token-norm.log` must contain a `budget crossing` line with the used/limit
+  values.
+- Set `TOKEN_NORM_MODE=block` with `TOKEN_NORM_MAX_TOOL_CALLS=3` and restart:
+  the next non-cheap tool call after the third must be refused with
+  `TOKEN NORM block`, while `todowrite` and `handoff` still work.
+- Set `TOKEN_NORM_MODE=handoff` with a low limit, cross it, then finish a todo
+  (or let the session idle): the next tool output must append
+  `HANDOFF RECOMMENDED` with the touched files and the skeleton.
+
+### Context-pressure validation
+
+The context formula (`input + cache.read + cache.write + output`) is the one
+number that can only be validated against a real compaction:
+
+- Run in `observe` mode. Leave `TOKEN_NORM_CONTEXT_LIMIT` unset to exercise the
+  model-limit lookup (requires a known provider/model), or set it to force a
+  small window.
+- Work until a `budget crossing` line with `context` appears in the log, and
+  compare its `used` value with the pre-compaction window reported by
+  `usage-audit.py --session <id>`.
+- If the model lookup finds no limit, context pressure stays off by design; set
+  `TOKEN_NORM_CONTEXT_LIMIT` explicitly.
+
+## 9. Kill switches
 
 - `TOKEN_NORM_BUDGET=0`: restart, confirm no counting reminders; the `handoff`
   tool still works.

@@ -11,6 +11,7 @@ vi.mock("../src/log.js", () => ({ log: vi.fn() }))
 vi.mock("../src/audit.js", () => ({ runAudit: vi.fn(() => "effective fresh tokens: 123k") }))
 
 import { runAudit } from "../src/audit.js"
+import { log } from "../src/log.js"
 import { SessionBudgetPlugin } from "../src/session-budget.js"
 
 const hooks = await SessionBudgetPlugin({} as never)
@@ -159,5 +160,128 @@ describe("SessionBudgetPlugin", () => {
 
   it("swallows malformed events", async () => {
     await expect(hooks.event!({} as never)).resolves.toBeUndefined()
+  })
+})
+
+const TIER1_KEYS = [
+  "TOKEN_NORM_MODE",
+  "TOKEN_NORM_MAX_COST",
+  "TOKEN_NORM_MAX_EFFECTIVE_TOKENS",
+  "TOKEN_NORM_MAX_TOOL_CALLS",
+  "TOKEN_NORM_CONTEXT_WARN",
+  "TOKEN_NORM_CONTEXT_LIMIT",
+]
+
+async function freshPlugin(env: Record<string, string> = {}): Promise<any> {
+  vi.resetModules()
+  for (const key of TIER1_KEYS) delete process.env[key]
+  for (const [key, value] of Object.entries(env)) process.env[key] = value
+  const mod = await import("../src/session-budget.js")
+  return mod.SessionBudgetPlugin({ client: undefined } as never)
+}
+
+async function toolCall(h: any, sessionID: string, tool = "read", args: any = {}): Promise<string> {
+  const output = { title: "t", output: "x".repeat(100), metadata: {} }
+  await h["tool.execute.after"]({ tool, sessionID, callID: "call_1", args }, output)
+  return output.output
+}
+
+async function stepFinish(h: any, sessionID: string, id: string, cost: number, tokens: any): Promise<void> {
+  await h.event({
+    event: { type: "message.part.updated", properties: { part: { type: "step-finish", id, sessionID, cost, tokens } } },
+  })
+}
+
+const ZERO_TOKENS = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+
+describe("SessionBudgetPlugin tier 1 budgets", () => {
+  it("parses mode and fractional limits from env, rejecting invalid values", async () => {
+    vi.resetModules()
+    process.env.TOKEN_NORM_MODE = "nonsense"
+    process.env.TOKEN_NORM_CONTEXT_WARN = "0.5"
+    process.env.TOKEN_NORM_MAX_COST = "0.50"
+    process.env.TOKEN_NORM_MAX_TOOL_CALLS = "0"
+    const cfg = await import("../src/config.js")
+    expect(cfg.MODE).toBe("warn")
+    expect(cfg.CONTEXT_WARN).toBe(0.5)
+    expect(cfg.MAX_COST).toBe(0.5)
+    expect(cfg.MAX_TOOL_CALLS).toBeUndefined()
+    for (const key of TIER1_KEYS) delete process.env[key]
+  })
+
+  it("injects the budget status once per metric crossing", async () => {
+    const h = await freshPlugin({ TOKEN_NORM_MODE: "warn", TOKEN_NORM_MAX_TOOL_CALLS: "3" })
+    const s = "ses_budget"
+    expect(await toolCall(h, s)).not.toContain("BUDGET")
+    expect(await toolCall(h, s)).not.toContain("BUDGET")
+
+    const third = await toolCall(h, s)
+    expect(third).toContain("TOKEN NORM -- BUDGET")
+    expect(third).toContain("Tool calls: 3 / 3 (100%) -- OVER")
+    expect(third).toContain("Crossed now: tool-calls")
+
+    expect(await toolCall(h, s)).not.toContain("BUDGET")
+  })
+
+  it("observe mode logs the crossing but injects nothing", async () => {
+    const h = await freshPlugin({ TOKEN_NORM_MODE: "observe", TOKEN_NORM_MAX_COST: "0.5" })
+    const s = "ses_observe"
+    await stepFinish(h, s, "p1", 0.6, ZERO_TOKENS)
+    vi.mocked(log).mockClear()
+
+    const out = await toolCall(h, s)
+    expect(out).not.toContain("BUDGET")
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("budget crossing"))
+  })
+
+  it("warns on context pressure from an explicit limit", async () => {
+    const h = await freshPlugin({ TOKEN_NORM_CONTEXT_LIMIT: "1000", TOKEN_NORM_CONTEXT_WARN: "0.5" })
+    const s = "ses_context"
+    await stepFinish(h, s, "p1", 0, { ...ZERO_TOKENS, input: 600 })
+
+    const out = await toolCall(h, s)
+    expect(out).toContain("Context now: 600 / 1.0k (60%) -- OVER")
+  })
+
+  it("block mode refuses non-cheap tools but keeps cheap tools and handoff open", async () => {
+    const h = await freshPlugin({ TOKEN_NORM_MODE: "block", TOKEN_NORM_MAX_TOOL_CALLS: "1" })
+    const s = "ses_block"
+    await toolCall(h, s)
+
+    const call = (tool: string) =>
+      h["tool.execute.before"]({ tool, sessionID: s, callID: "c" }, { args: {} })
+    await expect(call("read")).rejects.toThrow(/TOKEN NORM block/)
+    await expect(call("todowrite")).resolves.toBeUndefined()
+    await expect(call("handoff")).resolves.toBeUndefined()
+  })
+
+  it("handoff mode recommends at idle and pre-fills touched files", async () => {
+    const h = await freshPlugin({ TOKEN_NORM_MODE: "handoff", TOKEN_NORM_MAX_TOOL_CALLS: "1" })
+    const s = "ses_handoff"
+    await toolCall(h, s, "edit", { filePath: "/tmp/x.ts" })
+    await h.event({ event: { type: "session.idle", properties: { sessionID: s } } })
+
+    const out = await toolCall(h, s, "todowrite")
+    expect(out).toContain("HANDOFF RECOMMENDED")
+    expect(out).toContain("Files touched: /tmp/x.ts")
+    expect(out).toContain("Skeleton:")
+
+    expect(await toolCall(h, s, "todowrite")).not.toContain("HANDOFF RECOMMENDED")
+  })
+
+  it("handoff mode waits for every todo to complete", async () => {
+    const h = await freshPlugin({ TOKEN_NORM_MODE: "handoff", TOKEN_NORM_MAX_TOOL_CALLS: "1" })
+    const s = "ses_todos"
+    await toolCall(h, s)
+
+    await h.event({
+      event: { type: "todo.updated", properties: { sessionID: s, todos: [{ status: "in_progress" }] } },
+    })
+    expect(await toolCall(h, s, "todowrite")).not.toContain("HANDOFF RECOMMENDED")
+
+    await h.event({
+      event: { type: "todo.updated", properties: { sessionID: s, todos: [{ status: "completed" }] } },
+    })
+    expect(await toolCall(h, s, "todowrite")).toContain("HANDOFF RECOMMENDED")
   })
 })

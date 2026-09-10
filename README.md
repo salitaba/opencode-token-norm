@@ -325,8 +325,10 @@ tokens.** Method and limitations:
 All optional, all environment variables, and the defaults are the ones the
 sessions above argued for. Three thresholds — `TOKEN_NORM_ANNOUNCE_AT`,
 `TOKEN_NORM_AUDIT_EVERY`, `TOKEN_NORM_BOUNDARY_AT` — plus two kill switches,
-`TOKEN_NORM_BUDGET` and `TOKEN_NORM_HANDOFF`. The rest are paths you will
-probably never touch.
+`TOKEN_NORM_BUDGET` and `TOKEN_NORM_HANDOFF`. The measured budgets are opt-in:
+set one and the plugin staples a status block onto tool output the first time
+each metric crosses it (`TOKEN_NORM_MODE` controls how hard that bites). The
+rest are paths you will probably never touch.
 
 <details>
 <summary>All options</summary>
@@ -336,6 +338,12 @@ probably never touch.
 | `TOKEN_NORM_ANNOUNCE_AT` | `25` | Calls before the cost-statement reminder |
 | `TOKEN_NORM_AUDIT_EVERY` | `60` | Calls between audit checkpoints |
 | `TOKEN_NORM_BOUNDARY_AT` | `40` | Session size above which a new user message is a task boundary |
+| `TOKEN_NORM_MODE` | `warn` | `observe` logs only; `warn` injects; `handoff` adds a skeleton at a pause; `block` refuses non-cheap tools |
+| `TOKEN_NORM_MAX_COST` | unset | USD budget from provider cost |
+| `TOKEN_NORM_MAX_EFFECTIVE_TOKENS` | unset | Fresh-token budget (input + 0.1×cache read + 1.25×cache write) |
+| `TOKEN_NORM_MAX_TOOL_CALLS` | unset | Budgeted tool calls; cheap tools excluded |
+| `TOKEN_NORM_CONTEXT_WARN` | `0.8` | Fraction of the context window that counts as pressure |
+| `TOKEN_NORM_CONTEXT_LIMIT` | model limit | Override the window size in tokens |
 | `TOKEN_NORM_CHEAP_TOOLS` | `todowrite,question,skill` | Tools that do not count toward the budget |
 | `TOKEN_NORM_HANDOFF_DIR` | `~/.local/share/opencode/handoff` | Where handoff notes are written |
 | `TOKEN_NORM_LOG` | `~/.local/share/opencode/token-norm.log` | Threshold event log |
