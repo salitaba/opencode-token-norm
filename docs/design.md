@@ -1,9 +1,10 @@
 # Design notes
 
-*Why `opencode-token-norm` works the way it does. The [README](../README.md)
-shows the behavior; this is the reasoning behind the thresholds, the boundaries,
-and the metric. Claims trace back to one real session — the 184-call,
-3.0M-token one in the [post-mortem](post-mortem.md).*
+*Why `opencode-token-norm` works the way it does. The [README](../README.md) is
+the overview and [how-it-works.md](how-it-works.md) shows the behavior; this is
+the reasoning behind the thresholds, the boundaries, and the metric. Claims
+trace back to one real session — the 184-call, 3.0M-token one in the
+[post-mortem](post-mortem.md).*
 
 ## The thesis: advice vs. enforcement
 
@@ -191,3 +192,6 @@ That was chosen deliberately, and it defines the contract:
 - **Not prompt engineering with extra steps.** The reminder is not a
   better-worded instruction; it is a different delivery mechanism attached to
   tool output.
+- **Not networked.** No network calls, no telemetry. Handoff notes are written
+  to `~/.local/share/opencode/handoff/` (follows `XDG_DATA_HOME`; override with
+  `TOKEN_NORM_HANDOFF_DIR`).
