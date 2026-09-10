@@ -37,7 +37,7 @@ npm run build
 3. Follow the existing commit style: `feat:`, `fix:`, `docs:`, `chore:`.
 4. Run `npm run typecheck`, `npm test`, and `npm run build` before opening a pull request.
 5. Add user-facing changes to `CHANGELOG.md` under `## [Unreleased]`; maintainers move them into a version section at release time.
-6. Describe how you tested the change in OpenCode (see the install section of the README).
+6. Describe how you tested the change in OpenCode. For changes touching the event hooks or `handoff.ts`, run [the manual smoke test](docs/smoke-test.md) against a real OpenCode build — the unit suite mocks that runtime on purpose.
 
 ## Reporting issues
 

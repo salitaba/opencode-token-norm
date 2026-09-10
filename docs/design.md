@@ -123,6 +123,12 @@ weighted input rather than "the money number."
   user action, which is the point of making the split frictionless. Pass
   `submit: false` to stop at the pre-filled prompt when you want a beat to
   redirect before any tokens burn.
+- **The switch waits for evidence, not just a delay.** `session_new` returns once
+  dispatched, and the V1 API has no TUI readiness signal (every TUI endpoint
+  returns only a boolean). The append therefore waits for the `session.created`
+  event for a parentless session, with the old fixed delay as a floor and
+  `TOKEN_NORM_SWITCH_WAIT_MS` as the ceiling. Fast machines behave as before; a
+  slow switch waits for proof instead of guessing.
 - **Persisted before the TUI switch.** If the switch fails, the note is already
   on disk. The reverse ordering loses it on precisely the failure that matters.
 - **Refused for subagents.** Plugin tools register for every agent, so a subagent

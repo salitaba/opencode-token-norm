@@ -10,16 +10,16 @@
 
 **Your token rules are advice. This makes them mechanical.**
 
-An [OpenCode](https://opencode.ai) plugin that counts budgeted tool calls,
-staples reminders onto the output it is already reading, runs the token audit on
-its behalf, and collapses the session split into one tool call.
-
 ![token-norm demo: the agent gets counted, audited, and handed off](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.gif)
 
 *Demo (18s at 2x): the plugin counts calls and staples the audit onto tool output, then the agent calls `handoff` and lands in a fresh session with the note pre-filled. [Full-speed MP4](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.mp4).*
 
 **Observed on real sessions:** 74 `handoff` calls; **90%** ended the old session
 within 5 minutes. ([how that was measured](https://github.com/salitaba/opencode-token-norm/blob/main/docs/evaluation.md))
+
+An [OpenCode](https://opencode.ai) plugin that counts budgeted tool calls,
+staples reminders onto the output it is already reading, runs the token audit on
+its behalf, and collapses the session split into one tool call.
 
 ## What it does
 
@@ -65,7 +65,7 @@ fires and tells the agent to run the audit itself.
 
 | Component | Supported |
 |---|---|
-| OpenCode | builds with `@opencode-ai/plugin` ≥ 1.15.12 |
+| OpenCode | V1 plugin API (`@opencode-ai/plugin` 1.x). Built against 1.18.x, requires ≥ 1.15.12. The V2 plugin API is not targeted yet |
 | Node | ≥ 22 (CI tests 22) |
 | Python | 3.x, optional — audit checkpoint only |
 | OS | Linux, macOS, Windows (CI) |
@@ -173,21 +173,19 @@ is always available, feels free only because this context is already warm, and i
 exact rationalization the norm exists to block.
 ```
 
-The reminder fires **once per user message**, keyed on message identity. Repeated
-reminders become wallpaper and teach the model to skip *every* system-reminder,
-audit included — an early build keyed on call count and fired this one 61 times
-in a single session. The full story, and why "finishing here beats reloading
-cold" is the exact sentence the reminder exists to block, is in
+The reminder fires **once per user message**, keyed on message identity — a build
+that keyed on call count once fired it 61 times in one session. Why that is worse
+than silence, and why "finishing here beats reloading cold" is the exact sentence
+the reminder exists to block:
 [the design notes](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md#task-boundary-detection).
 
 ### 2. Cost statement at 25 calls — **once per session**
 
 At 25 calls — the first moment the task is provably big — the plugin demands the
-cost statement: calls remaining and what will drive them, the caps now in effect,
-and which slice could ship immediately behind a handoff.
-
-Once per session, not once per threshold: the statement exists to change the
-plan, and the plan only changes once.
+cost statement: remaining calls, the caps now in effect, and which slice could
+ship immediately behind a handoff. Once per session: the statement exists to
+change the plan, and the plan only changes once.
+([Why 25](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md#why-25-and-why-once-per-session).)
 
 ### 3. Audit checkpoint every 60 calls — **already run**
 
@@ -208,15 +206,10 @@ In your NEXT message, before continuing the task: report the effective-token
 number and the cache multiplier to the user, and say whether you are splitting.
 ```
 
-No step left to defer — only a fact to report.
-
-**On the numbers.** `effective fresh tokens` is a **cost-weighted normalized
-input, not a dollar amount**: cache reads bill at roughly 0.1x fresh input and
-cache writes at ~1.25x (Anthropic's list; other providers are similar), so the
-weighted sum tracks spend far better than raw `cache_read`. The `cost` beside it
-is the provider-reported `cost_usd`, and stays `$0` on gateways that don't report
-one. (`calls` in the audit counts model turns; the 60 in the header counts tool
-calls.)
+No step left to defer — only a fact to report. What `effective fresh tokens`
+measures, and why it is not a dollar amount:
+[the metric](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md#the-effective-fresh-metric).
+(`calls` in the audit counts model turns; the 60 in the header counts tool calls.)
 
 ### 4. Compaction context
 
@@ -226,10 +219,10 @@ behavior. *"Be frugal"* does not.
 
 ### 5. The `handoff` tool
 
-The norm says split at phase boundaries. It rarely happens, because splitting
-means leaving the TUI, opening a new session, and re-typing the context by hand —
-three manual steps demanded at exactly the moment the warm session feels cheapest
-to continue. The rule loses to friction, not to disagreement.
+The norm says split at phase boundaries. It rarely happens: splitting means
+leaving the TUI, opening a session, and re-typing context by hand — three manual
+steps at the exact moment the warm session feels cheapest to continue.
+([Why friction wins](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md#handoff-design-decisions).)
 
 One tool call instead:
 
@@ -322,7 +315,8 @@ probably never touch.
 | `TOKEN_NORM_LOG` | `~/.local/share/opencode/token-norm.log` | Threshold event log |
 | `TOKEN_NORM_PYTHON` | `python3` | Interpreter for the audit script |
 | `TOKEN_NORM_AUDIT_SCRIPT` | bundled | Override the audit script path |
-| `TOKEN_NORM_SETTLE_MS` | `350` | Wait after `session_new` before pre-filling the prompt |
+| `TOKEN_NORM_SETTLE_MS` | `350` | Minimum wait after `session_new` before pre-filling (floor) |
+| `TOKEN_NORM_SWITCH_WAIT_MS` | `2000` | Max wait for the new session before appending the prompt |
 | `TOKEN_NORM_BUDGET` | `1` | Set `0` to disable the budget half |
 | `TOKEN_NORM_HANDOFF` | `1` | Set `0` to disable the handoff tool |
 
@@ -364,19 +358,11 @@ Those four modes are mutually exclusive, and each accepts `--json` for the raw
 numbers — pipe the audit into your own tooling rather than parsing the table.
 Session IDs come from `--top`, or from the `token-norm.log` lines above.
 
-One number carries the section:
-
-```text
-effective fresh tokens = input + 0.1·cache_read + 1.25·cache_write
-```
-
-That is a **cost-weighted normalized input**, not a dollar amount: cache reads
-bill at roughly a tenth of fresh input, writes at about 1.25x (multipliers follow
-Anthropic's list; other providers are similar), so weighting makes sessions
-comparable. Raw `cache_read` does not — which is why a session can look enormous
-and cost little, or look modest and not. For actual spend, the audit reports the
-session's provider-reported `cost_usd` when OpenCode has one; some gateways
-report `0`, and there the weighted figure is your only signal.
+The one number to read is `effective fresh tokens = input + 0.1·cache_read +
+1.25·cache_write` — a cost-weighted input, not a dollar amount. The formula and
+its multipliers are explained in
+[the metric](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md#the-effective-fresh-metric);
+actual spend is the provider-reported `cost_usd`, which some gateways report as `0`.
 
 ### Shareable receipt
 
