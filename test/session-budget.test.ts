@@ -243,6 +243,37 @@ describe("SessionBudgetPlugin tier 1 budgets", () => {
     expect(out).toContain("Context now: 600 / 1.0k (60%) -- OVER")
   })
 
+  it("caches the resolved model window for the process lifetime", async () => {
+    vi.resetModules()
+    for (const key of TIER1_KEYS) delete process.env[key]
+    process.env.TOKEN_NORM_CONTEXT_WARN = "0.5"
+    const providers = vi
+      .fn()
+      .mockResolvedValue({ data: { providers: [{ id: "p", models: { m: { limit: { context: 1000 } } } }] } })
+    const mod = await import("../src/session-budget.js")
+    const h: any = await mod.SessionBudgetPlugin({ client: { config: { providers } } } as never)
+
+    const seed = async (s: string) => {
+      await h.event({
+        event: {
+          type: "message.updated",
+          properties: { info: { id: `m_${s}`, role: "assistant", sessionID: s, providerID: "p", modelID: "m" } },
+        },
+      })
+      await stepFinish(h, s, `p_${s}`, 0, { ...ZERO_TOKENS, input: 600 })
+    }
+
+    await seed("ses_cache_a")
+    expect(await toolCall(h, "ses_cache_a")).toContain("Context now: 600 / 1.0k (60%)")
+
+    // Documented semantics: a mid-process provider change is not picked up --
+    // the window stays pinned until restart (or an explicit CONTEXT_LIMIT).
+    providers.mockResolvedValue({ data: { providers: [{ id: "p", models: { m: { limit: { context: 5000 } } } }] } })
+    await seed("ses_cache_b")
+    expect(await toolCall(h, "ses_cache_b")).toContain("Context now: 600 / 1.0k (60%)")
+    expect(providers).toHaveBeenCalledTimes(1)
+  })
+
   it("block mode refuses non-cheap tools but keeps cheap tools and handoff open", async () => {
     const h = await freshPlugin({ TOKEN_NORM_MODE: "block", TOKEN_NORM_MAX_TOOL_CALLS: "1" })
     const s = "ses_block"

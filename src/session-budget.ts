@@ -127,9 +127,11 @@ interface BudgetMetric {
 
 const modelContextLimits = new Map<string, number>()
 
-/** Model window size, cached per provider/model. TOKEN_NORM_CONTEXT_LIMIT wins.
- * When neither the client lookup nor the env var yields a number, context
- * pressure is simply disabled -- never guessed. */
+/** Model window size, cached per provider/model for the lifetime of the
+ * process. Provider config changes (edited model limits, re-registered models)
+ * are not picked up until opencode restarts; TOKEN_NORM_CONTEXT_LIMIT bypasses
+ * the cache entirely. When neither the client lookup nor the env var yields a
+ * number, context pressure is simply disabled -- never guessed. */
 async function contextLimitFor(client: any, sessionID: string): Promise<number | undefined> {
   if (CONTEXT_LIMIT !== undefined) return CONTEXT_LIMIT
   const s = usage.get(sessionID)

@@ -347,7 +347,7 @@ rest are paths you will probably never touch.
 | `TOKEN_NORM_MAX_EFFECTIVE_TOKENS` | unset | Fresh-token budget (input + 0.1×cache read + 1.25×cache write) |
 | `TOKEN_NORM_MAX_TOOL_CALLS` | unset | Budgeted tool calls; cheap tools excluded |
 | `TOKEN_NORM_CONTEXT_WARN` | `0.8` | Fraction of the context window that counts as pressure |
-| `TOKEN_NORM_CONTEXT_LIMIT` | model limit | Override the window size in tokens |
+| `TOKEN_NORM_CONTEXT_LIMIT` | model limit | Override the window size in tokens (bypasses the cached model lookup) |
 | `TOKEN_NORM_CHEAP_TOOLS` | `todowrite,question,skill` | Tools that do not count toward the budget |
 | `TOKEN_NORM_HANDOFF_DIR` | `~/.local/share/opencode/handoff` | Where handoff notes are written |
 | `TOKEN_NORM_LOG` | `~/.local/share/opencode/token-norm.log` | Threshold event log |
@@ -359,6 +359,10 @@ rest are paths you will probably never touch.
 | `TOKEN_NORM_HANDOFF` | `1` | Set `0` to disable the handoff tool |
 
 </details>
+
+The model window is read from the provider config once per provider/model and
+cached for the life of the opencode process. Restart after changing provider
+settings, or set `TOKEN_NORM_CONTEXT_LIMIT`, which bypasses the cache.
 
 Every `~/.local/share` above follows `XDG_DATA_HOME` when it is set.
 
