@@ -120,7 +120,12 @@ design decisions, and why subagents are refused, are in
 `token_norm_status` answers the same accounting on demand instead of at a
 threshold: read-only JSON with tool calls, context, cost and effective-token
 usage, plus the `continue | warn | handoff | block` recommendation the plugin
-would give right now. Scopes are explicit in the payload: `budget` figures
+would give right now. That value reflects the configured enforcement policy —
+the action the current mode and budget state would trigger (`block` only in
+`block` mode over a hard limit, `handoff` when `handoff` mode sees pressure or
+an exceeded limit, `warn` for any other crossing, otherwise `continue`) — not a
+semantic judgment that the task should stop being worked on. Scopes are
+explicit in the payload: `budget` figures
 (`toolCalls`, `cost`, `effectiveTokens`) roll up the whole session tree (root
 plus descendants), while `session.context` is the current session's window
 alone. It reads the same accumulators the enforcement path uses, so status and

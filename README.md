@@ -162,7 +162,11 @@ limitations: [evaluation notes](https://github.com/salitaba/opencode-token-norm/
 All optional, all environment variables. Three thresholds —
 `TOKEN_NORM_ANNOUNCE_AT`, `TOKEN_NORM_AUDIT_EVERY`, `TOKEN_NORM_BOUNDARY_AT` —
 plus two kill switches: `TOKEN_NORM_BUDGET=0` disables the counting half, and
-`TOKEN_NORM_HANDOFF=0` drops the `handoff` tool. All options and defaults:
+`TOKEN_NORM_HANDOFF=0` drops the `handoff` tool. The guardrails — thresholds
+and mode — are on by default; the measured budgets (`TOKEN_NORM_MAX_COST`,
+`TOKEN_NORM_MAX_EFFECTIVE_TOKENS`, `TOKEN_NORM_MAX_TOOL_CALLS`,
+`TOKEN_NORM_CONTEXT_WARN`, `TOKEN_NORM_CONTEXT_LIMIT`) are opt-in, and unset
+means unenforced. All options and defaults:
 [configuration](https://github.com/salitaba/opencode-token-norm/blob/main/docs/configuration.md).
 
 ## Run the audit yourself
