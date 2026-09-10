@@ -22,7 +22,8 @@ export const AUDIT_EVERY = num("TOKEN_NORM_AUDIT_EVERY", 60)
  * costs more than it saves. */
 export const BOUNDARY_AT = num("TOKEN_NORM_BOUNDARY_AT", 40)
 
-/** Cheap reads/greps are how you AVOID waste; do not scare the agent off them. */
+/** Tools that do not count toward the budget. Planning and asking should not
+ * burn it; reads and greps do, because context is what you pay for. */
 export const CHEAP_TOOLS = new Set(
   (process.env.TOKEN_NORM_CHEAP_TOOLS ?? "todowrite,question,skill")
     .split(",")

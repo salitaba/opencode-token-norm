@@ -157,7 +157,7 @@ export const SessionBudgetPlugin: Plugin = async () => {
         // and read-only, so the plugin runs it and staples the RESULT on. The
         // agent then has the number in hand and no step to defer -- only a
         // fact to report.
-        const audit = runAudit()
+        const audit = runAudit(input.sessionID)
         output.output += note([
           `TOKEN NORM -- ${s.calls} tool calls. Audit checkpoint (ran for you):`,
           ``,

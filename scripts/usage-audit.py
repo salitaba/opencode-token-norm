@@ -14,7 +14,8 @@ Usage:
   python3 usage-audit.py --receipt           # screenshot-friendly receipt (last session)
   python3 usage-audit.py --receipt <id>      # receipt for a specific session
 
-DB path: ~/.local/share/opencode/opencode.db (override with OPENCODE_DB).
+DB path: $XDG_DATA_HOME/opencode/opencode.db (default ~/.local/share/opencode/opencode.db;
+override with OPENCODE_DB).
 """
 import argparse
 import json
@@ -25,7 +26,8 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
-DB = Path(os.environ.get("OPENCODE_DB", Path.home() / ".local/share/opencode/opencode.db"))
+DATA_HOME = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+DB = Path(os.environ.get("OPENCODE_DB") or DATA_HOME / "opencode/opencode.db")
 
 
 def connect() -> sqlite3.Connection:
@@ -49,6 +51,11 @@ def fmt(n: float) -> str:
     if n >= 1e3:
         return f"{n/1e3:.0f}k"
     return f"{n:.0f}"
+
+
+def fmt_cost(v: float) -> str:
+    """Trim trailing zeros: $13.61 reads better than $13.6100."""
+    return "$" + f"{v:.4f}".rstrip("0").rstrip(".")
 
 
 def effective_fresh(input_tok: int, cache_read: int, cache_write: int) -> float:
@@ -256,14 +263,14 @@ def render_receipt(a: dict, color: bool = False) -> str:
     lines.append(paint("EFFECTIVE FRESH TOKENS".center(W), "1"))
     lines.append(paint(fmt(eff).center(W), "1"))
     lines.append(
-        f"input {fmt(t['input'])} + cache read {fmt(0.1 * t['cache_read'])} "
-        f"+ cache write {fmt(1.25 * t['cache_write'])}".center(W)
+        f"input {fmt(t['input'])} + cache read ×0.1 {fmt(0.1 * t['cache_read'])} "
+        f"+ cache write ×1.25 {fmt(1.25 * t['cache_write'])}".center(W)
     )
     if raw > eff > 0:
         lines.append(f"of {fmt(raw)} raw input · cache discount {1 - eff / raw:.0%}".center(W))
     lines.append(thin)
     ratio_s = f"{ratio:.0f}x" if ratio >= 10 else f"{ratio:.1f}x"
-    lines.append(row("cache ratio", f"{ratio_s}  cache read ÷ fresh tokens"))
+    lines.append(row("cache ratio", f"{ratio_s}  cache read ÷ (input+output)"))
     tool_line = str(a.get("tool_calls", 0))
     top = sorted(a.get("tool_counts", {}).items(), key=lambda kv: -kv[1])[:3]
     if top:
@@ -277,7 +284,7 @@ def render_receipt(a: dict, color: bool = False) -> str:
         lines.append(row("system floor", f"{fmt(a['first_call_total'])} (first call)"))
     lines.append(row("output", fmt(t["output"])))
     if t["cost_usd"] > 0:
-        lines.append(row("cost", f"${t['cost_usd']:.4f}"))
+        lines.append(row("cost", fmt_cost(t["cost_usd"])))
     lines.append(thin)
     lines.append(row("verdict", paint(verdict, vcode)))
     lines.extend([bar, "  enforce the budget, not the advice", "  npm i opencode-token-norm", bar])
@@ -372,14 +379,14 @@ def main():
     print(f"model   : {a['model']}")
     print(f"totals  : input {fmt(t['input'])}  output {fmt(t['output'])}  "
           f"cache_read {fmt(t['cache_read'])}  cache_write {fmt(t['cache_write'])}")
-    print(f"effective fresh tokens: {fmt(eff)}   (input + 0.1·cache_read + 1.25·cache_write — the money number)   cost ${t['cost_usd']:.4f}")
+    print(f"effective fresh tokens: {fmt(eff)}   (input + 0.1·cache_read + 1.25·cache_write — the money number)   cost {fmt_cost(t['cost_usd'])}")
     if "calls" in a:
         p = a["per_call_total"]
         c = a["per_call_cache_read"]
         print(f"calls   : {a['calls']}   context/call min {fmt(p['min'])} med {fmt(p['median'])} max {fmt(p['max'])}")
         print(f"cacheR  : per-call med {fmt(c['median'])}  (first-call total {fmt(a['first_call_total'])} = system floor)")
         ratio = t["cache_read"] / max(1, t["input"] + t["output"])
-        print(f"cache   : {ratio:.0f}x fresh tokens — bloat driver "
+        print(f"cache   : {ratio:.0f}x cache read ÷ (input+output) — bloat driver "
               + ("HIGH" if p["median"] > 120000 else "ok" if p["median"] <= 60000 else "watch"))
     print("tool bytes (payload that re-enters the conversation):")
     for tool, b in a.get("tool_bytes", {}).items():
