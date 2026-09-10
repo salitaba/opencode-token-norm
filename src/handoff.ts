@@ -93,10 +93,14 @@ export const HandoffPlugin: Plugin = async ({ client, directory }) => {
       // session is evidence that the TUI's switch landed.
       if (!info?.id || info.parentID) return
       // A late event from an earlier, already-timed-out switch must not satisfy
-      // this waiter: when the SDK exposes a creation time, only sessions created
-      // after this wait began count. 250ms of slack absorbs clock rounding.
+      // this waiter: only sessions created after this wait began count. 250ms of
+      // slack absorbs clock rounding. V1 types `Session.time.created` as a
+      // required number, so an untimed event cannot be proven fresh -- and it
+      // cannot be told apart from a stale one. Ignore it; the bounded timeout
+      // below still appends after the settle floor, so the degradation is a
+      // slower handoff, never a prompt in the wrong session.
       const created = info.time?.created
-      if (typeof created === "number" && created < sessionSwitched.startedAt - 250) return
+      if (typeof created !== "number" || created < sessionSwitched.startedAt - 250) return
       const waiter = sessionSwitched
       sessionSwitched = null
       waiter.resolve()

@@ -164,6 +164,25 @@ describe("handoff tool", () => {
     expect(log).toHaveBeenCalledWith(expect.stringContaining("no session.created"))
   })
 
+  it("ignores a session.created without time.created (unverifiable freshness)", async () => {
+    const { client } = fakeClient(async () => ({ data: [] }))
+    const hooks = await loadHooks(client)
+    vi.mocked(log).mockClear()
+
+    client.tui.executeCommand.mockImplementation(async () => {
+      await hooks.event!({
+        event: {
+          type: "session.created",
+          properties: { info: { id: "ses_no_time" } },
+        },
+      } as never)
+    })
+
+    await hooks.tool!.handoff.execute(args, ctx())
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("no session.created"))
+    expect(client.tui.appendPrompt).toHaveBeenCalledTimes(1)
+  })
+
   it("does not overwrite when two handoffs happen in the same second", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     try {
