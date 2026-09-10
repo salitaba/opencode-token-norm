@@ -147,7 +147,7 @@ describe("SessionBudgetPlugin", () => {
     expect(last).toContain("25 tool calls")
   })
 
-  it("evicts state when a session is deleted", async () => {
+  it("evicts activity state when a session is deleted (usage ledger is separate)", async () => {
     const s = "ses_deleted"
     await calls(s, 25)
     await hooks.event!({

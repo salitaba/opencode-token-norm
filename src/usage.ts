@@ -62,6 +62,10 @@ export interface SessionUsage {
   imageReads: number
   editedFiles: Map<string, number>
   lastTool?: string
+  /** Totals-only tombstone left by `session.deleted`: counters and linkage
+   * stay so rollups keep their dollars, detail is freed. Late events for the
+   * id are ignored; only a real `session.created` revives it. */
+  retired: boolean
 }
 
 export interface NormEvent {
@@ -149,6 +153,7 @@ function empty(sessionID: string): SessionUsage {
     readCounts: new Map(),
     imageReads: 0,
     editedFiles: new Map(),
+    retired: false,
   }
 }
 
@@ -197,6 +202,9 @@ export class UsageTracker {
     budgeted: boolean,
   ): void {
     const s = this.get(sessionID)
+    // A retired id is a deleted session's ledger entry, not a live session:
+    // late tool events must not resurrect detail or move its frozen totals.
+    if (s.retired) return
     s.lastTool = tool
     if (budgeted) s.calls++
     const bytes = typeof output?.output === "string" ? Buffer.byteLength(output.output) : 0
@@ -255,6 +263,7 @@ export class UsageTracker {
       const info = props?.info
       if (info?.role === "assistant" && typeof info.sessionID === "string") {
         const s = this.get(info.sessionID)
+        if (s.retired) return
         if (typeof info.providerID === "string") s.providerID = info.providerID
         if (typeof info.modelID === "string") s.modelID = info.modelID
       }
@@ -263,7 +272,16 @@ export class UsageTracker {
     if (type === "session.created" || type === "session.updated") {
       const info = props?.info
       if (!info?.id) return
-      this.setParent(this.get(info.id), info.parentID)
+      const s = this.get(info.id)
+      // A late `session.updated` for a tombstone is a stale event; reparenting
+      // frozen totals would move money between rollups, so ignore it. A real
+      // `session.created` revives the entry with counters intact: spend is
+      // never un-spent.
+      if (s.retired) {
+        if (type !== "session.created") return
+        s.retired = false
+      }
+      this.setParent(s, info.parentID)
       return
     }
     if (type === "session.compacted") {
@@ -289,6 +307,9 @@ export class UsageTracker {
     const partID = part?.id
     if (typeof sessionID !== "string" || typeof partID !== "string") return
     const s = this.get(sessionID)
+    // Deleted sessions keep their ledger entry; a late step for one is a
+    // duplicate or a zombie, never new spend -- ignore it.
+    if (s.retired) return
     // step-finish parts are published once, but dedupe by id is cheap and makes
     // a double delivery cost nothing instead of doubling the budget.
     if (s.seenParts.has(partID)) return
@@ -321,8 +342,25 @@ export class UsageTracker {
   private remove(sessionID: string): void {
     const s = this.sessions.get(sessionID)
     if (!s) return
-    if (s.parentID) this.sessions.get(s.parentID)?.childIDs.delete(sessionID)
-    this.sessions.delete(sessionID)
+    // Retire to a totals-only tombstone: the parent link and the rolled-up
+    // counters survive (budget money was spent; un-spending on delete lies),
+    // but context, deltas, seen-ids, attribution and history are freed. The
+    // tombstone keeps parent->child reachability so live grandchildren stay
+    // in the root rollup. Late step/tool events are ignored; only a new
+    // session.created for the id revives it (see handleEvent).
+    s.contextNow = 0
+    s.contextPeak = 0
+    s.deltas = []
+    s.seenParts = new Set()
+    s.history = []
+    s.bytesByTool = new Map()
+    s.readCounts = new Map()
+    s.imageReads = 0
+    s.editedFiles = new Map()
+    s.lastTool = undefined
+    s.providerID = undefined
+    s.modelID = undefined
+    s.retired = true
   }
 
   rootOf(sessionID: string): string {

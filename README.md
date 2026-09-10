@@ -33,8 +33,9 @@ its behalf, and collapses the session split into one tool call.
 - **Ships a `handoff` tool** that persists a structured note, opens a fresh
   session, and pre-fills the prompt in one call.
 
-The enforcement is behavioral: it puts the rule directly in the agent's execution
-path. Every threshold is logged, configurable, and independently disableable.
+The default enforcement is behavioral: it puts the rule directly in the agent's
+execution path; opt-in `block` mode adds mechanical refusal. Every threshold is
+logged, configurable, and independently disableable.
 
 **Before / after:**
 
@@ -72,7 +73,7 @@ fires and tells the agent to run the audit itself.
 | Component | Supported |
 |---|---|
 | OpenCode | V1 plugin API (`@opencode-ai/plugin` 1.x). Built against 1.18.x, requires ≥ 1.15.12. The V2 plugin API is not targeted yet |
-| Node | ≥ 22 (CI tests 22) |
+| Node | ≥ 22 (CI tests 22, 24) |
 | Python | 3.x, optional — audit checkpoint only |
 | OS | Linux, macOS, Windows (CI) |
 
@@ -117,11 +118,12 @@ counting half; `TOKEN_NORM_HANDOFF=0` drops the `handoff` tool. Restart to apply
 | Audit checkpoint | you run it, or you don't | "run the audit periodically" | already run — read-only, every 60 calls |
 | Stale "do everything" overrides | invisible | nothing revokes them | a new task past 40 calls expires them |
 | Session split | out-of-band, three manual steps | "split at phase boundaries" | one `handoff` call, fresh session pre-filled |
-| Can block a tool call | no | no | **no** |
+| Can block a tool call | no | no | no, unless opt-in `block` mode |
 
-**Soft enforcement, stated plainly.** The plugin never blocks a tool call, edits
-its arguments, or fails one — it changes what the agent can't miss, not what it
-can do. A determined agent can still ignore every reminder. The bet is that the
+**Soft enforcement, stated plainly.** By default the plugin never blocks a tool
+call, edits its arguments, or fails one — it changes what the agent can't miss,
+not what it can do. Only opt-in `block` mode refuses non-cheap tool calls while
+over budget. A determined agent can still ignore every reminder. The bet is that the
 numbers arriving in-band, at the moment of spend, change the plan; if the bet
 fails, you still get the honest receipt.
 
@@ -301,9 +303,9 @@ tokens.** Method and limitations:
 
 ## Safety
 
-- **It never blocks.** The budget half does not deny a tool call, edit its
-  arguments, or fail one. A wrong threshold guess costs you a few lines of text,
-  never a broken session.
+- **Default never blocks; `block` is opt-in.** Outside `TOKEN_NORM_MODE=block`
+  nothing denies a tool call, edits its arguments, or fails one. A wrong
+  threshold guess costs you a few lines of text, never a broken session.
 - **One caveat, stated plainly.** The audit checkpoint runs synchronously and can
   stall OpenCode's event loop for up to 20s on a slow database, so it may briefly
   delay a tool result at the checkpoint.
@@ -312,7 +314,8 @@ tokens.** Method and limitations:
 - **In-memory counters.** Call counts live in the plugin process, keyed by
   session, and reset when OpenCode restarts — a resumed long session undercounts
   until thresholds are crossed again. Counts are never persisted, and deleted
-  sessions are evicted
+  sessions leave only a retired totals entry (spend history survives deletion;
+  context and attribution detail does not)
   ([why](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md#session-state-and-process-boundaries)).
 - **Nothing leaves your machine.** No network calls, no telemetry. Handoff notes
   are written to `~/.local/share/opencode/handoff/` (follows `XDG_DATA_HOME`;

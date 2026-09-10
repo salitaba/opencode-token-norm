@@ -124,13 +124,29 @@ describe("child rollup", () => {
     expect(tracker.rollup("ses_root").calls).toBe(2)
   })
 
-  it("detaches deleted sessions from the rollup", () => {
+  it("retires deleted sessions to a totals-only tombstone", () => {
     const tracker = new UsageTracker()
     child(tracker, "ses_child", "ses_root")
     step(tracker, "c1", "ses_child", { input: 500 }, 0.5)
+    tracker.noteToolCall("ses_child", "read", { filePath: "/repo/a.ts" }, { output: "aaaa" }, true)
     tracker.handleEvent({ type: "session.deleted", properties: { info: { id: "ses_child" } } })
-    expect(tracker.rollup("ses_root").sessions).toBe(1)
-    expect(tracker.rollup("ses_root").costUsd).toBe(0)
+    // Ledger survives: spend stays in the root rollup, reachability stays.
+    expect(tracker.rollup("ses_root").sessions).toBe(2)
+    expect(tracker.rollup("ses_root").costUsd).toBeCloseTo(0.5)
+    expect(tracker.rollup("ses_root").calls).toBe(1)
+    // Detail freed: no live context, no attribution, no history.
+    const retired = tracker.get("ses_child")
+    expect(retired.retired).toBe(true)
+    expect(retired.contextNow).toBe(0)
+    expect(retired.history).toHaveLength(0)
+    // Late zombie events for the retired id are ignored, never new spend.
+    step(tracker, "zombie", "ses_child", { input: 999 }, 9)
+    expect(tracker.rollup("ses_root").costUsd).toBeCloseTo(0.5)
+    // Live grandchildren stay reachable through the tombstone.
+    child(tracker, "ses_grand", "ses_child")
+    step(tracker, "g1", "ses_grand", { input: 200 }, 0.2)
+    expect(tracker.rollup("ses_root").costUsd).toBeCloseTo(0.7)
+    expect(tracker.rollup("ses_root").sessions).toBe(3)
   })
 })
 

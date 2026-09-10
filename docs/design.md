@@ -162,15 +162,24 @@ That was chosen deliberately, and it defines the contract:
 - **Nothing is persisted.** The audit reads OpenCode's database; only the
   counters are in memory. There is no state file to corrupt and no schema to
   migrate, and `handoff` plus the manual audit keep working across restarts.
-- **Deleted sessions are evicted.** `session.deleted` removes the entry, so a
-  long-lived server does not accumulate one per session ever opened.
+- **Live state is in memory; spend is a ledger.** Call counts reset when the
+  plugin process restarts, and `session.deleted` frees a session's context,
+  deltas and attribution detail. What deletion must not do is un-spend: a
+  deleted session retires to a totals-only entry (cost/tokens/calls plus the
+  parent link), so the root rollup — and `block` enforcement — keep counting
+  money that was actually spent, including through still-live grandchildren.
+  Late events for a deleted id are ignored, never re-counted.
+- **Tombstones are the accepted cost of that ledger.** A long-lived server
+  keeps one small totals entry per deleted session instead of full per-session
+  state. Persisting the ledger is deliberately out of scope until budget
+  enforcement needs to survive process restarts.
 
 ## What it is not
 
-- **Not hard enforcement.** It never blocks a tool call, edits arguments, or
-  fails one. It changes what the agent cannot miss, not what it can do. A
-  determined agent can ignore every reminder; the fallback is the human reading
-  the receipt.
+- **Not hard enforcement by default.** Outside opt-in `block` mode it never
+  blocks a tool call, edits arguments, or fails one. It changes what the agent
+  cannot miss, not what it can do. A determined agent can ignore every
+  reminder; the fallback is the human reading the receipt.
 - **Not a cost dashboard.** It enforces during the session; reporting is a side
   effect.
 - **Not a replacement for the norm in `AGENTS.md`.** The text still defines what
