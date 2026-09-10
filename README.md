@@ -4,6 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/opencode-token-norm)](https://www.npmjs.com/package/opencode-token-norm)
 [![license](https://img.shields.io/npm/l/opencode-token-norm)](https://github.com/salitaba/opencode-token-norm/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/salitaba/opencode-token-norm?style=social)](https://github.com/salitaba/opencode-token-norm)
+[![GitHub release](https://img.shields.io/github/v/release/salitaba/opencode-token-norm)](https://github.com/salitaba/opencode-token-norm/releases/latest)
 
 **Your token rules are advice. This makes them mechanical.**
 
@@ -192,15 +193,15 @@ handoff({
 })
 ```
 
-The plugin writes the note to disk, opens a new TUI session, and pre-fills its
-prompt. You press enter.
+The plugin writes the note to disk, opens a new TUI session, pre-fills its
+prompt, and submits it — the fresh session starts immediately.
 
 **Design decisions worth knowing:**
 
-- **Not auto-submitted by default.** An auto-submitted handoff immediately starts
-  spending on a task you might have wanted to redirect, and that beat before
-  enter is the entire point of splitting. Pass `submit: true` for genuinely
-  unattended work.
+- **Auto-submitted by default.** The handoff starts the fresh session with no
+  user action, which is the point of making the split frictionless. Pass
+  `submit: false` to stop at the pre-filled prompt when you want a beat to
+  redirect before any tokens burn.
 - **Persisted before the TUI switch.** If the switch fails, the note is already
   on disk. The reverse ordering loses it on precisely the failure that matters.
 - **Refused for subagents.** Plugin tools register for every agent, so a subagent

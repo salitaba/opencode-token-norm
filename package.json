@@ -1,6 +1,6 @@
 {
   "name": "opencode-token-norm",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Enforces a token budget in OpenCode: counts tool calls, staples un-skippable reminders at thresholds, runs the usage audit for you, and makes the session split a single tool call",
   "type": "module",
   "license": "MIT",
