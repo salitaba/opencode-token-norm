@@ -30,12 +30,14 @@ What the script does:
 4. records `demo/record.tape` (~4 minutes, then idle time is trimmed);
 5. exports the MP4 and GIF into `docs/assets/`.
 
-Export window and speed can be tuned with env vars:
+Export window and speed can be tuned with env vars. `SS=auto` samples the take
+at 4fps and starts at the first sustained bright frame (skipping the startup
+splash), so the exported assets never open on dead screen:
 
 | Var | Default | Meaning |
 | --- | --- | --- |
-| `SS` | `6` | seconds skipped at the start (where the task begins) |
-| `DUR` | `26` | seconds of footage exported |
+| `SS` | `auto` | seconds skipped at the start; `auto` detects the first content frame |
+| `DUR` | `37` | seconds of footage exported (covers the demo through the handoff) |
 | `SPEED` | `0.5` | playback speed factor (`0.5` = 2x in the assets) |
 
 Tool-call thresholds are set on the recording shell via `TOKEN_NORM_ANNOUNCE_AT`

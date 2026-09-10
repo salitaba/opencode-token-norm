@@ -10,9 +10,19 @@ ASSETS="$ROOT/docs/assets"
 VHS_VERSION="${VHS_VERSION:-v0.12.0}"
 VHS_BIN="${VHS_BIN:-$WORK/bin/vhs}"
 
-SS="${SS:-6}"          # seconds to skip at the start of the recording
-DUR="${DUR:-56}"       # seconds of footage to export
+SS="${SS:-auto}"       # seconds to skip at the start; "auto" = first frame with content
+DUR="${DUR:-37}"       # seconds of footage to export (covers the demo through the handoff)
 SPEED="${SPEED:-0.5}"  # 0.5 = 2x playback in the exported assets
+
+# First frame with sustained bright text (YMAX >= 200 for 3 samples at 4fps),
+# skipping the startup splash: only content after 5s counts. Prints seconds or nothing.
+detect_ss() {
+  ffmpeg -v error -i "$1" -vf "fps=4,signalstats,metadata=print:file=-" -f null - 2>/dev/null |
+    awk '
+      /^frame:/ { t = $3; sub(/^pts_time:/, "", t); t += 0 }
+      /YMAX=/   { split($0, a, "="); if (a[2] + 0 >= 200 && t >= 5) { if (run == 0) first = t; run++; if (run >= 3) { print first; exit } } else run = 0 }
+    ' || true
+}
 
 for tool in go git npm ffmpeg ttyd; do
   if ! command -v "$tool" >/dev/null; then
@@ -72,6 +82,17 @@ export TOKEN_NORM_ANNOUNCE_AT="${TOKEN_NORM_ANNOUNCE_AT:-4}"
 export TOKEN_NORM_BOUNDARY_AT="${TOKEN_NORM_BOUNDARY_AT:-6}"
 export TOKEN_NORM_AUDIT_EVERY="${TOKEN_NORM_AUDIT_EVERY:-6}"
 (cd "$RUN" && "$VHS_BIN" "$DEMO/record.tape")
+
+if [ "$SS" = auto ]; then
+  DETECTED="$(detect_ss "$RUN/take.mp4")"
+  if [ -n "$DETECTED" ]; then
+    SS="$DETECTED"
+    echo "==> auto-detected content start at ${SS}s"
+  else
+    echo "warning: no content detected; exporting from 0s" >&2
+    SS=0
+  fi
+fi
 
 echo "==> exporting docs/assets/token-norm-demo.{mp4,gif}"
 mkdir -p "$ASSETS"
