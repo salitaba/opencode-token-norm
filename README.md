@@ -17,50 +17,21 @@ its behalf, and collapses the session split into one tool call.
 
 *Demo (18s at 2x): the plugin counts calls and staples the audit onto tool output, then the agent calls `handoff` and lands in a fresh session with the note pre-filled. [Full-speed MP4](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.mp4).*
 
-You wrote a token budget into `AGENTS.md`. It loads into every session. The agent
-reads it, agrees with it, and then spends 184 tool calls and 3.0M effective
-tokens — real dollars — on a task that should have been three sessions.
-([What that session actually did, call by call](https://github.com/salitaba/opencode-token-norm/blob/main/docs/post-mortem.md).)
+## What it does
 
-Writing the rule better does not fix that. The rules that hold are the ones that
-do not depend on the agent choosing to follow them, which is why "cap bash
-output" never fails — a plugin rewrites the command and nobody has to remember.
-The two rules with no mechanism are the two that break.
+- **Counts tool calls and marks task boundaries.** Past `BOUNDARY_AT` calls
+  (default 40), a new user message revokes any stale "do everything" override —
+  the failure no dashboard can see.
+- **Demands the cost statement at 25 calls**, once per session, at the first
+  moment the task is provably big.
+- **Runs the usage audit itself every 60 calls** and staples the numbers to tool
+  output, so auditing is a fact to report rather than a step to defer.
+- **Ships a `handoff` tool** that persists a structured note, opens a fresh
+  session, and pre-fills the prompt in one call.
 
-So this plugin adds no advice. It **counts**, and at thresholds it staples the
-instruction onto tool output the agent cannot skip past. It cannot make the agent
-obey. It can make the rule impossible to not see, and that turns out to be most
-of the gap.
-([Advice vs. enforcement, rule by rule](https://github.com/salitaba/opencode-token-norm/blob/main/docs/advice-vs-enforcement.md).)
-
-Two halves, either one disableable:
-
-- **`TokenNormBudget`** — counts tool calls, staples in-band reminders at
-  thresholds, and runs the usage audit *for* the agent, leaving it a fact to
-  report rather than a step to defer.
-- **`TokenNormHandoff`** — a `handoff` tool that collapses the session split from
-  three manual steps into one call.
-
----
-
-## Contents
-
-- [Install](#install)
-- [What it actually does](#what-it-actually-does)
-  - [1. Task boundary detection](#1-task-boundary-detection-the-missing-enforcement)
-  - [2. Cost statement at 25 calls](#2-cost-statement-at-25-calls--once-per-session)
-  - [3. Audit checkpoint every 60 calls](#3-audit-checkpoint-every-60-calls--already-run)
-  - [4. Compaction context](#4-compaction-context)
-  - [5. The `handoff` tool](#5-the-handoff-tool)
-- [Safety](#safety)
-- [Configuration](#configuration)
-- [Run the audit yourself](#run-the-audit-yourself)
-- [Pairs with your `AGENTS.md`](#pairs-with-your-agentsmd)
-- [Further reading](#further-reading)
-- [Links](#links)
-- [License](#license)
-
----
+It never blocks a tool call, edits arguments, or fails one. The enforcement is
+behavioral: it makes the rule impossible to not see. Every threshold is logged,
+configurable, and independently disableable.
 
 ## Install
 
@@ -93,25 +64,71 @@ crossed a threshold.
 the counting half; `TOKEN_NORM_HANDOFF=0` drops the `handoff` tool. Both take
 effect on restart.
 
----
+## Why Token Norm?
 
-## What it actually does
+| | Statusline / dashboard | Token rule in `AGENTS.md` | token-norm |
+|---|---|---|---|
+| Who reads it | you, at the edge of the screen | the model, as one more instruction | the model, stapled to output it is already reading |
+| When it fires | live, but outside the agent's context | only if the agent chooses to reread it | at 25 / 40 / 60 calls, in-band |
+| Audit checkpoint | you run it, or you don't | "run the audit periodically" | already run — read-only, every 60 calls |
+| Stale "do everything" overrides | invisible | nothing revokes them | a new task past 40 calls expires them |
+| Session split | out-of-band, three manual steps | "split at phase boundaries" | one `handoff` call, fresh session pre-filled |
+| Can block a tool call | no | no | **no** |
+
+**Soft enforcement, stated plainly.** The plugin never blocks a tool call, edits
+its arguments, or fails one — it changes what the agent can't miss, not what it
+can do. A determined agent can still ignore every reminder. The bet is that the
+numbers arriving in-band, at the moment of spend, change the plan; if the bet
+fails, you still get the honest receipt.
+
+None of this replaces the others: `AGENTS.md` still defines what "on budget"
+means, and a dashboard is still the passive record. This plugin enforces the
+countable parts, in the channel the agent is already reading.
+
+Here is the failure it was built against. You wrote a token budget into
+`AGENTS.md`. It loads into every session. The agent reads it, agrees with it, and
+then spends 184 tool calls and 3.0M effective fresh tokens on a task that should
+have been three sessions.
+([What that session actually did, call by call](https://github.com/salitaba/opencode-token-norm/blob/main/docs/post-mortem.md).)
+
+Writing the rule better does not fix that. The rules that hold are the ones that
+do not depend on the agent choosing to follow them. So this plugin adds no
+advice: it counts, and at thresholds it staples the instruction onto tool output
+the agent cannot skip past. It cannot make the agent obey; it can make the rule
+impossible to not see — and that turns out to be most of the gap.
+([The design reasoning](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md)
+· [the rule-by-rule case](https://github.com/salitaba/opencode-token-norm/blob/main/docs/advice-vs-enforcement.md).)
+
+## Contents
+
+- [What it does](#what-it-does)
+- [Install](#install)
+- [Why Token Norm?](#why-token-norm)
+- [How it works](#how-it-works)
+  - [1. Task boundary detection](#1-task-boundary-detection-the-missing-enforcement)
+  - [2. Cost statement at 25 calls](#2-cost-statement-at-25-calls--once-per-session)
+  - [3. Audit checkpoint every 60 calls](#3-audit-checkpoint-every-60-calls--already-run)
+  - [4. Compaction context](#4-compaction-context)
+  - [5. The `handoff` tool](#5-the-handoff-tool)
+- [Safety](#safety)
+- [Configuration](#configuration)
+- [Run the audit yourself](#run-the-audit-yourself)
+- [Pairs with your `AGENTS.md`](#pairs-with-your-agentsmd)
+- [Further reading](#further-reading)
+- [Links](#links)
+- [License](#license)
+
+## How it works
 
 ### 1. Task boundary detection (the missing enforcement)
 
 The expensive failure is not a long task. It is a **new** task inheriting an old
-task's context *and* an old task's permission. Dashboards and statuslines report
-that after the session ends, when the money is gone; this interrupts the agent
-while the spend is still avoidable.
+task's context *and* an old task's permission. A second request — *"now do all of
+them"* — gets read as a continuation of the `do everything` override granted for
+the first. Overrides are per-task; nothing enforced that.
 
-A real session: 195k tokens deep, the norm in context the whole time, the agent
-ran the audit and reported *"77x cache, bloat HIGH"* — then kept going. The
-reason is not laziness. A second request (*"now do all of them"*) was read as a
-continuation of the `do everything` override granted for the first. Overrides are
-per-task; nothing enforced that.
-
-Now, when a new user message arrives in a session already past `BOUNDARY_AT`
-calls (default 40), the next tool call carries this:
+When a new user message arrives in a session already past `BOUNDARY_AT` calls
+(default 40), the next tool call carries this:
 
 ```text
 TOKEN NORM -- new request arrived 47 tool calls deep. This is a TASK BOUNDARY.
@@ -122,45 +139,33 @@ is always available, feels free only because this context is already warm, and i
 exact rationalization the norm exists to block.
 ```
 
-That last paragraph is the load-bearing one. Every agent talks itself past a
-split with some version of *"reloading cold costs more than finishing here."* The
-argument is always available and almost always wrong: the marginal call feels
-free precisely because the context is already warm.
-
-The reminder fires **once per user message**, keyed on message identity — not a
-detail. `message.updated` fires many times for the same message, and an early
-build keyed on call count instead, which went stale after one tool call and
-re-armed: 61 copies of this warning in a single session. That is worse than
-silence. A warning on every tool call becomes wallpaper, and the agent learns to
-skip *every* system-reminder, audit included. Cry wolf once per wolf.
+The reminder fires **once per user message**, keyed on message identity. Repeated
+reminders become wallpaper and teach the model to skip *every* system-reminder,
+audit included — an early build keyed on call count and fired this one 61 times
+in a single session. The full story, and why "finishing here beats reloading
+cold" is the exact sentence the reminder exists to block, is in
+[the design notes](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md#task-boundary-detection).
 
 ### 2. Cost statement at 25 calls — **once per session**
 
-The norm wants the cost statement **before** a big task starts. The agent cannot
-give one then; it does not know the size yet. So the plugin waits for the first
-moment the task is provably big and demands the statement there: calls remaining
-and what will drive them, the caps now in effect, and which slice could ship
-immediately behind a handoff.
+At 25 calls — the first moment the task is provably big — the plugin demands the
+cost statement: calls remaining and what will drive them, the caps now in effect,
+and which slice could ship immediately behind a handoff.
 
-Once per session, not once per threshold. The statement exists to change the
+Once per session, not once per threshold: the statement exists to change the
 plan, and the plan only changes once.
 
 ### 3. Audit checkpoint every 60 calls — **already run**
 
-"Run this command and report the number" is advice, and advice at a checkpoint
-loses to the task in flight every time. One session was told to audit at call 79,
-kept working, and produced the number only when the user thought to ask — long
-after the spend it was meant to prevent.
-
-So the plugin runs the audit itself. The command is cheap, deterministic, and
-opens OpenCode's sqlite DB **read-only**. The result arrives stapled to output
-the agent is already reading:
+The plugin runs the audit itself — cheap, deterministic, read-only against
+OpenCode's sqlite DB — and staples the result to output the agent is already
+reading:
 
 ```text
 TOKEN NORM -- 60 tool calls. Audit checkpoint (ran for you):
 
 totals  : input 23k  output 15k  cache_read 891k  cache_write 87k
-effective fresh tokens: 221k   (input + 0.1·cache_read + 1.25·cache_write — the money number)   cost $0.89
+effective fresh tokens: 221k   (cost-weighted input: input + 0.1·cache_read + 1.25·cache_write)   cost $0.89
 calls   : 22   context/call min 23k med 49k max 61k
 cacheR  : per-call med 45k  (first-call total 23k = system floor)
 cache   : 23x cache read ÷ (input+output) — bloat driver ok
@@ -169,8 +174,15 @@ In your NEXT message, before continuing the task: report the effective-token
 number and the cache multiplier to the user, and say whether you are splitting.
 ```
 
-No step left to defer — only a fact to report. (`calls` in the audit counts model
-turns; the 60 in the header counts tool calls.)
+No step left to defer — only a fact to report.
+
+**On the numbers.** `effective fresh tokens` is a **cost-weighted normalized
+input, not a dollar amount**: cache reads bill at roughly 0.1x fresh input and
+cache writes at ~1.25x (Anthropic's list; other providers are similar), so the
+weighted sum tracks spend far better than raw `cache_read`. The `cost` beside it
+is the provider-reported `cost_usd`, and stays `$0` on gateways that don't report
+one. (`calls` in the audit counts model turns; the 60 in the header counts tool
+calls.)
 
 ### 4. Compaction context
 
@@ -199,27 +211,12 @@ handoff({
 The plugin writes the note to disk, opens a new TUI session, pre-fills its
 prompt, and submits it — the fresh session starts immediately.
 
-**Design decisions worth knowing:**
-
-- **Auto-submitted by default.** The handoff starts the fresh session with no
-  user action, which is the point of making the split frictionless. Pass
-  `submit: false` to stop at the pre-filled prompt when you want a beat to
-  redirect before any tokens burn.
-- **Persisted before the TUI switch.** If the switch fails, the note is already
-  on disk. The reverse ordering loses it on precisely the failure that matters.
-- **Refused for subagents.** Plugin tools register for every agent, so a subagent
-  could otherwise hijack your screen mid-task to split work you never asked to
-  split. Subagent status is resolved from the live agent list, so agents you add
-  later classify correctly without touching this plugin. If that lookup fails it
-  allows the call — a false block would strand the primary agent with no way out.
-- **Structured args, not a freeform summary.** `task`/`done`/`next`/`files`/`notes`
-  force real paths and verified identifiers into the note. The next session cannot
-  see your scrollback, and a vague handoff makes it re-derive everything you just
-  paid for.
-- **The tool result says STOP.** It closes with an instruction not to continue,
-  not to make further tool calls, and not to summarize beyond one line. Without
-  it the agent helpfully keeps working in the session it just declared over —
-  spending the exact context the handoff existed to discard.
+The note is persisted before the TUI switch (a failed switch must not lose it),
+auto-submitted by default (`submit: false` stops at the pre-filled prompt),
+refused for subagents, and the tool result ends with an explicit STOP so the
+agent doesn't keep spending in the session it just closed. The rest of the
+design decisions, and why subagents are refused, are in
+[the design notes](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md#handoff-design-decisions).
 
 ---
 
@@ -308,11 +305,13 @@ One number carries the section:
 effective fresh tokens = input + 0.1·cache_read + 1.25·cache_write
 ```
 
-That is what maps to money. Raw `cache_read` does not, which is why a session can
-look enormous and cost little — or look modest and not. The audit also reports
-the session's `cost_usd` straight from OpenCode's local DB when the provider
-supplied one; some gateways report 0, and there the effective-token figure is
-your only signal. Multipliers follow Anthropic cache pricing.
+That is a **cost-weighted normalized input**, not a dollar amount: cache reads
+bill at roughly a tenth of fresh input, writes at about 1.25x (multipliers follow
+Anthropic's list; other providers are similar), so weighting makes sessions
+comparable. Raw `cache_read` does not — which is why a session can look enormous
+and cost little, or look modest and not. For actual spend, the audit reports the
+session's provider-reported `cost_usd` when OpenCode has one; some gateways
+report `0`, and there the weighted figure is your only signal.
 
 ### Shareable receipt
 
@@ -364,6 +363,10 @@ point back at the file that does.
 
 ## Further reading
 
+- [**Design notes**](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md)
+  — why the thresholds are where they are, the advice-vs-enforcement thesis, the
+  task-boundary model, the handoff decisions, and what the effective-fresh number
+  actually measures.
 - [**Advice vs. enforcement**](https://github.com/salitaba/opencode-token-norm/blob/main/docs/advice-vs-enforcement.md)
   — the rule-by-rule case for why a norm sitting in context is not a norm, and
   the answer to "isn't this just prompt engineering?"

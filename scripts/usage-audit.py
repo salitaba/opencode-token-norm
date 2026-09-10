@@ -59,9 +59,10 @@ def fmt_cost(v: float) -> str:
 
 
 def effective_fresh(input_tok: int, cache_read: int, cache_write: int) -> float:
-    """Cost-normalized input: cache reads ~0.1x, writes ~1.25x (5-min TTL,
-    Anthropic list; other providers similar). This is the number that maps to
-    money — raw cache_read does not."""
+    """Cost-weighted input: cache reads ~0.1x, writes ~1.25x (5-min TTL,
+    Anthropic list; other providers similar). A normalized proxy for spend —
+    raw cache_read does not track it. Actual dollars are the provider-reported
+    `cost` column."""
     return input_tok + 0.1 * cache_read + 1.25 * cache_write
 
 
@@ -379,7 +380,7 @@ def main():
     print(f"model   : {a['model']}")
     print(f"totals  : input {fmt(t['input'])}  output {fmt(t['output'])}  "
           f"cache_read {fmt(t['cache_read'])}  cache_write {fmt(t['cache_write'])}")
-    print(f"effective fresh tokens: {fmt(eff)}   (input + 0.1·cache_read + 1.25·cache_write — the money number)   cost {fmt_cost(t['cost_usd'])}")
+    print(f"effective fresh tokens: {fmt(eff)}   (cost-weighted input: input + 0.1·cache_read + 1.25·cache_write)   cost {fmt_cost(t['cost_usd'])}")
     if "calls" in a:
         p = a["per_call_total"]
         c = a["per_call_cache_read"]
