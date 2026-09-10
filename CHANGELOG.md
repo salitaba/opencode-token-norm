@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-11
+
+### Fixed
+
+- `session.deleted` no longer un-spends the subtree: the session retires to a
+  totals-only tombstone (linkage kept, history/detail freed) so root rollups
+  and `block` enforcement keep counting real spend. Live grandchildren stay
+  reachable through the tombstone. Late step/tool events for a deleted session
+  are ignored instead of double-counting.
+- README/design no longer claim the plugin never blocks: default never blocks,
+  `block` mode is opt-in. Node row now matches the CI matrix (22, 24).
+
 ## [0.5.0] - 2026-09-11
 
 ### Added
@@ -72,7 +84,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `TokenNormBudget`, which counts tool calls and staples reminders at thresholds, and `TokenNormHandoff`, which collapses the session split into a single tool call.
 
-[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/salitaba/opencode-token-norm/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.3.0...v0.4.0
