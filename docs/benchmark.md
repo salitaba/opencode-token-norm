@@ -1,7 +1,7 @@
 # Benchmark: plain OpenCode vs OpenCode + token-norm
 
 Status: **methodology plus a completed 4-run pilot** (2 tasks x 2 arms x 1 run,
-2026-09-10, opencode 1.18.30, commit `79eaf1a`, spend **$0.0071** of a $1.00 cap).
+2026-09-10, opencode 1.18.30, commit `79eaf1a`, spend **$0.0071** of a $0.25 pilot cap).
 It is a smoke test of the harness, not a study. Do not cite it as evidence that
 the plugin reduces cost or tokens.
 
@@ -29,8 +29,9 @@ peak, handoff rate, or task success?
     `scripts/install-local.mjs`. Plugin defaults apply (`TOKEN_NORM_MODE=warn`,
     budget and handoff enabled).
 - **Run.** `opencode run --model <id> --auto --format json "<prompt>"` with cwd =
-  the task copy. Wall cap 240 s per run, enforced by the harness. Runs are
-  sequential, one per arm per task (no repeats, no warmup).
+  the task copy. Wall cap 240 s per run by default (`--timeout`), enforced by the
+  harness; the pilot ran with `--timeout 75`. Runs are sequential, one per arm
+  per task (no repeats, no warmup).
 - **Tasks.** Fixture dirs under `bench/tasks/<name>/` with `prompt.txt`,
   `fixture/`, and an evaluator `eval.mjs` that lives outside the workspace.
   Evaluator exit 0 = success; it imports the workspace code directly so editing
@@ -42,7 +43,7 @@ peak, handoff rate, or task success?
 |---|---|
 | Effective fresh tokens | `input + 0.1*cache_read + 1.25*cache_write`, summed over all sessions in the run's DB (`scripts/usage-audit.py`) |
 | Total cost (USD) | provider-reported `cost` column, summed over sessions |
-| Wall time | harness clock, capped at 240 s |
+| Wall time | harness clock, capped at the run's `--timeout` (240 s default, 75 s in the pilot) |
 | Tool calls | count of `tool` parts (`scripts/usage-audit.py`) |
 | Context peak | max per-call `total` across sessions |
 | Handoff notes | files under the run's `$XDG_DATA_HOME/opencode/handoff/` |
@@ -53,9 +54,10 @@ peak, handoff rate, or task success?
 
 `deepseek-v4-flash` list price (models.dev cache): $0.15/M input, $0.60/M output,
 $0.003/M cache read. Pilot = 2 tasks x 2 arms = 4 runs; expected well under
-$0.10. Harness hard cap: **$1.00** provider-reported spend, then it stops.
-Per-run wall cap: 240 s. The full 20-task study is out of scope and requires
-explicit approval.
+$0.10. Harness hard cap defaults to **$1.00** provider-reported spend
+(`--max-cost`), then it stops; the pilot used `--max-cost 0.25`. Per-run wall
+cap defaults to 240 s; the pilot used 75 s. The full 20-task study is out of
+scope and requires explicit approval.
 
 ## Pilot results
 

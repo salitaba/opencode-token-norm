@@ -274,6 +274,16 @@ agent doesn't keep spending in the session it just closed. The rest of the
 design decisions, and why subagents are refused, are in
 [the design notes](https://github.com/salitaba/opencode-token-norm/blob/main/docs/design.md#handoff-design-decisions).
 
+### 6. On-demand status
+
+`token_norm_status` answers the same accounting on demand instead of at a
+threshold: read-only JSON with the session's tool calls, context, cost and
+effective-token usage, plus the `continue | warn | handoff | block`
+recommendation the plugin would give right now. It reads the same accumulators
+the enforcement path uses, so status and reminders cannot disagree; unknown
+sessions report zeros. The tool is registered by the budget plugin, so it is
+absent when that plugin is not loaded.
+
 ---
 
 ## Observed behavior
