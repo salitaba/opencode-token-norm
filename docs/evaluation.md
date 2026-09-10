@@ -1,8 +1,8 @@
-# Does it work? Evaluation notes
+# Observed behavior
 
-*What the plugin's own logs and one user's local OpenCode database can and cannot
-show. All queries are read-only; no session content, titles, or file paths are
-published here.*
+*Evaluation notes: what the plugin's own logs and one user's local OpenCode
+database can and cannot show. All queries are read-only; no session content,
+titles, or file paths are published here.*
 
 ## Method
 

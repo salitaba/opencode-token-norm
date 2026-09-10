@@ -10,7 +10,7 @@
 
 **Your token rules are advice. This makes them mechanical.**
 
-An [OpenCode](https://opencode.ai) plugin that counts your agent's tool calls,
+An [OpenCode](https://opencode.ai) plugin that counts budgeted tool calls,
 staples reminders onto the output it is already reading, runs the token audit on
 its behalf, and collapses the session split into one tool call.
 
@@ -18,9 +18,12 @@ its behalf, and collapses the session split into one tool call.
 
 *Demo (18s at 2x): the plugin counts calls and staples the audit onto tool output, then the agent calls `handoff` and lands in a fresh session with the note pre-filled. [Full-speed MP4](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.mp4).*
 
+**Observed on real sessions:** 74 `handoff` calls; **90%** ended the old session
+within 5 minutes. ([how that was measured](https://github.com/salitaba/opencode-token-norm/blob/main/docs/evaluation.md))
+
 ## What it does
 
-- **Counts tool calls and marks task boundaries.** Past `BOUNDARY_AT` calls
+- **Counts budgeted tool calls and marks task boundaries.** Past `BOUNDARY_AT` calls
   (default 40), a new user message revokes any stale "do everything" override —
   the failure no dashboard can see.
 - **Demands the cost statement at 25 calls**, once per session, at the first
@@ -120,7 +123,7 @@ directly in its execution path — and that turns out to be most of the gap.
   - [3. Audit checkpoint every 60 calls](#3-audit-checkpoint-every-60-calls--already-run)
   - [4. Compaction context](#4-compaction-context)
   - [5. The `handoff` tool](#5-the-handoff-tool)
-- [Does it work?](#does-it-work)
+- [Observed behavior](#observed-behavior)
 - [Safety](#safety)
 - [Configuration](#configuration)
 - [Run the audit yourself](#run-the-audit-yourself)
@@ -130,6 +133,26 @@ directly in its execution path — and that turns out to be most of the gap.
 - [License](#license)
 
 ## How it works
+
+```text
+                   OpenCode
+                      │
+          ┌───────────┴────────────┐
+          │                        │
+   session-budget             handoff
+          │                        │
+   tool.execute.after       handoff(...)
+   message.updated                │
+   session.compacting             ├─ persist note to disk
+          │                       ├─ open a fresh session
+          ├─ count budgeted calls ├─ pre-fill the prompt
+          ├─ boundary / announce  └─ submit it
+          ├─ run the audit
+          └─ staple a reminder
+             onto tool output
+                      │
+             the agent reads it in-band
+```
 
 ### 1. Task boundary detection (the missing enforcement)
 
@@ -231,12 +254,18 @@ design decisions, and why subagents are refused, are in
 
 ---
 
-## Does it work?
+## Observed behavior
 
-Mechanically, yes — the logs from one real machine show the guardrails firing,
-not just loading. Since 2026-09-08: **205 sessions** crossed the 25-call
-announce, **69** hit the audit checkpoint, **583** task boundaries fired, and
-**74 `handoff` notes** were written.
+The logs from one real machine show the guardrails firing, not just loading —
+since 2026-09-08:
+
+```text
+205 sessions
+227 budget reminders
+ 69 audits
+583 boundaries
+ 74 handoffs
+```
 
 The strongest behavioral signal is what happens after a handoff: **64 of 71
 (90%)** matched sessions stopped within 5 minutes of the note being written
