@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-11
+
+### Added
+
+- Measured budgets from provider `step-finish` events (cost, input/output/cache tokens), not just tool-call counts: `TOKEN_NORM_MAX_COST`, `TOKEN_NORM_MAX_EFFECTIVE_TOKENS`, `TOKEN_NORM_MAX_TOOL_CALLS`, and `TOKEN_NORM_CONTEXT_LIMIT`. The first crossing of each metric staples a status block onto tool output; cost/tokens/calls roll up across subagent sessions.
+- `TOKEN_NORM_MODE` enforcement modes: `warn` (default, injects the status block), `observe` (logs crossings only, injects nothing), `handoff` (adds a skeleton at the next pause once over budget), and `block` (opt-in; refuses non-cheap tool calls while over budget — cheap tools and `handoff` stay available as the escape hatch).
+- Context pressure: current window relative to the model's context limit, resolved from the client's provider config or overridden with `TOKEN_NORM_CONTEXT_LIMIT`; threshold `TOKEN_NORM_CONTEXT_WARN` (default `0.8`).
+- Handoff recommendations include estimated attribution from output bytes (top tools, repeated reads, images) and touched files pre-filled from edit/write/patch tool args.
+
 ## [0.4.1] - 2026-09-11
 
 ### Fixed
@@ -63,7 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `TokenNormBudget`, which counts tool calls and staples reminders at thresholds, and `TokenNormHandoff`, which collapses the session split into a single tool call.
 
-[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/salitaba/opencode-token-norm/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.2.1...v0.3.0
