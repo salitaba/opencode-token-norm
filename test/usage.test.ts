@@ -148,6 +148,24 @@ describe("child rollup", () => {
     expect(tracker.rollup("ses_root").costUsd).toBeCloseTo(0.7)
     expect(tracker.rollup("ses_root").sessions).toBe(3)
   })
+
+  it("includes spend from a chain deeper than the old depth cap in the root rollup", () => {
+    const tracker = new UsageTracker()
+    const depth = 40
+    child(tracker, "ses_0", "ses_root")
+    for (let i = 1; i < depth; i++) child(tracker, `ses_${i}`, `ses_${i - 1}`)
+    step(tracker, "deep", `ses_${depth - 1}`, { input: 100 }, 0.5)
+    expect(tracker.rootOf(`ses_${depth - 1}`)).toBe("ses_root")
+    expect(tracker.rollup("ses_root").costUsd).toBeCloseTo(0.5)
+    expect(tracker.rollup("ses_root").sessions).toBe(depth + 1)
+  })
+
+  it("terminates on a parent cycle instead of walking forever", () => {
+    const tracker = new UsageTracker()
+    child(tracker, "ses_a", "ses_b")
+    child(tracker, "ses_b", "ses_a")
+    expect(["ses_a", "ses_b"]).toContain(tracker.rootOf("ses_a"))
+  })
 })
 
 describe("attribution", () => {

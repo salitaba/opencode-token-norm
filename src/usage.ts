@@ -90,7 +90,6 @@ const HISTORY_MAX = 100
 const SEEN_PARTS_MAX = 500
 const EDITED_MAX = 100
 const RECENT_EDITS_MAX = 20
-const ROOT_DEPTH_MAX = 20
 
 // Tool ids that write to disk. `file.edited` carries no sessionID (verified
 // against the installed runtime schema: `{ file: String }`), so per-session
@@ -365,10 +364,12 @@ export class UsageTracker {
 
   rootOf(sessionID: string): string {
     let current = sessionID
-    for (let i = 0; i < ROOT_DEPTH_MAX; i++) {
-      const parent = this.sessions.get(current)?.parentID
-      if (!parent) return current
+    const seen = new Set<string>([current])
+    let parent = this.sessions.get(current)?.parentID
+    while (parent && !seen.has(parent)) {
+      seen.add(parent)
       current = parent
+      parent = this.sessions.get(current)?.parentID
     }
     return current
   }
