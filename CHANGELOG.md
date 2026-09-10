@@ -5,15 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-09-10
 
 ### Added
 
-- `npm run install:local` (`scripts/install-local.mjs`): loads this package as a local OpenCode plugin. Workaround for OpenCode builds ≥ 1.17 that silently skip npm-spec plugins ([opencode#48379](https://github.com/anomalyco/opencode/issues/48379)); verified end to end on 1.18.30.
+- One-command install: `npx opencode-token-norm` copies a self-contained plugin bundle and the audit script into `~/.config/opencode/`; `npx opencode-token-norm uninstall` removes them. It installs as a local plugin file because OpenCode builds ≥ 1.17 can silently skip npm-spec plugins ([opencode#48379](https://github.com/anomalyco/opencode/issues/48379)); verified end to end on 1.18.30.
+- `npm run install:local` for development checkouts: rebuilds the bundle and reinstalls it.
 
 ### Changed
 
-- README: document the local-install fallback and the npm-spec compatibility caveat.
+- README install is the one-command `npx` flow. `opencode plugin opencode-token-norm --global` is documented as equivalent once npm-spec loading is fixed.
 
 ## [0.3.0] - 2026-09-10
 
@@ -46,7 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `TokenNormBudget`, which counts tool calls and staples reminders at thresholds, and `TokenNormHandoff`, which collapses the session split into a single tool call.
 
-[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/salitaba/opencode-token-norm/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.1.0...v0.2.0
