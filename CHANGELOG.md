@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-11
+
+### Fixed
+
+- Deleted-session suppression survives eviction: an id evicted from the bounded
+  deleted window could be resurrected by a late `step-finish`, re-counting spend
+  already folded into its parent. Deleted ids are now also recorded in a
+  fixed-size filter with no false negatives, and a live-entry check lets a
+  restarted `session.created` through. Adds the seeded usage-ledger invariant
+  suite (`test/budget-state.invariants.test.ts`) covering the eviction
+  regression.
+
 ## [0.7.1] - 2026-09-11
 
 ### Added
@@ -151,7 +163,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `TokenNormBudget`, which counts tool calls and staples reminders at thresholds, and `TokenNormHandoff`, which collapses the session split into a single tool call.
 
-[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.5.3...v0.6.0
