@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-12
+
+### Added
+
+- **Weighted tool-call budgets.** `TOKEN_NORM_TOOL_WEIGHTS` and
+  `TOKEN_NORM_PHASE_WEIGHTS` accept `name=weight` comma lists (positive numbers;
+  unlisted names weigh 1), so a `bash` call can cost more than a `read`, or a
+  planning-mode call less than a build-mode one. Phase is the latest assistant
+  message mode, resolved per step through `messageID` with a session-latest
+  fallback. A malformed entry is dropped, weighs 1, and reports into the config
+  diagnostics.
+
+### Changed
+
+- **`TOKEN_NORM_MAX_TOOL_CALLS` now compares weighted calls** (tool weight ×
+  phase weight; cheap tools still contribute nothing) and the metric is labeled
+  "Weighted tool calls". Raw call counts continue to drive the announce, audit,
+  and task-boundary thresholds and the policy call-count axis, so weights can
+  never delay or advance a reminder.
+
 ## [0.8.0] - 2026-09-12
 
 ### Fixed
@@ -275,7 +295,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `TokenNormBudget`, which counts tool calls and staples reminders at thresholds, and `TokenNormHandoff`, which collapses the session split into a single tool call.
 
-[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.0...v0.7.1
