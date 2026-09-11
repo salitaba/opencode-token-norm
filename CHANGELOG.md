@@ -37,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Release provenance.** Every build writes `dist/provenance.json` recording the
+  `gitSha` it was built from, whether the working tree was dirty, and the sha256
+  of both files that leave npm's integrity story once installed --
+  `dist/plugin.js` and `scripts/usage-audit.py`. The installer copies those two
+  into `~/.config/opencode`, where nothing else attests to them and the audit
+  script is then executed. The digests ship in the tarball, are rendered as a
+  table in the GitHub release notes, and `provenance.json` is attached as a
+  release asset, so an installed copy can be checked with `shasum -a 256`.
+  `test/packaging.test.ts` rehashes the packed bytes, so a stale or wrong
+  digest fails the build rather than shipping.
 - Config diagnostics: a malformed or misspelled `TOKEN_NORM_*` setting is
   reported once at load (log line plus a toast) instead of silently falling back
   to its default. Covers non-numeric or non-positive thresholds and budgets, an

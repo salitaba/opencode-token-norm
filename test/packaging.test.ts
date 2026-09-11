@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -14,9 +15,12 @@ const REQUIRED_ENTRIES = [
   "dist/index.d.ts",
   "dist/index.js",
   "dist/plugin.js",
+  "dist/provenance.json",
   "scripts/install-local.mjs",
   "scripts/usage-audit.py",
 ]
+
+const PROVENANCE_ARTIFACTS = ["dist/plugin.js", "scripts/usage-audit.py"]
 
 const ROOT_ENTRIES = new Set(["LICENSE", "README.md", "package.json"])
 
@@ -91,6 +95,37 @@ describe("packaged artifact", () => {
       (file) => !ROOT_ENTRIES.has(file) && !file.startsWith("dist/") && !file.startsWith("scripts/"),
     )
     expect(unexpected).toEqual([])
+  })
+
+  // The two hashed files leave npm's integrity story the moment the installer
+  // copies them into ~/.config/opencode. If the recorded digests do not match
+  // the bytes actually packed, the published provenance is worse than none.
+  it("records the commit and the true sha256 of every artifact it names", () => {
+    const packageRoot = path.join(packedPackageDir, "package")
+    const provenance = JSON.parse(
+      fs.readFileSync(path.join(packageRoot, "dist", "provenance.json"), "utf8"),
+    ) as {
+      name: string
+      version: string
+      gitSha: string
+      algorithm: string
+      artifacts: Record<string, string>
+    }
+
+    const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")) as {
+      name: string
+      version: string
+    }
+    expect(provenance.name).toBe(pkg.name)
+    expect(provenance.version).toBe(pkg.version)
+    expect(provenance.algorithm).toBe("sha256")
+    expect(provenance.gitSha).toMatch(/^[0-9a-f]{40}$/)
+
+    expect(Object.keys(provenance.artifacts).sort()).toEqual([...PROVENANCE_ARTIFACTS].sort())
+    for (const [relative, digest] of Object.entries(provenance.artifacts)) {
+      const packed = fs.readFileSync(path.join(packageRoot, relative))
+      expect(createHash("sha256").update(packed).digest("hex"), `${relative} digest`).toBe(digest)
+    }
   })
 
   it("installs both files from the tarball, idempotently, replacing stale copies", () => {

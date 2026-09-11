@@ -32,8 +32,13 @@ jobs:
             exit 1
           fi
 
+      # build:plugin is run explicitly, not left to prepublishOnly, so
+      # dist/provenance.json exists before anything reads it and records the
+      # same bytes npm is about to pack.
       - name: Build
-        run: npm run build
+        run: |
+          npm run build
+          npm run build:plugin
 
       - name: Publish to npm
         run: npm publish --access public
@@ -48,4 +53,15 @@ jobs:
             echo "::error::no CHANGELOG.md section found for $version"
             exit 1
           fi
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+          # Provenance is appended to the notes as well as attached, so the
+          # hashes are readable without downloading anything.
+          {
+            printf '\n## Provenance\n\n'
+            printf 'Built from `%s`.\n\n' "$(node -p "require('./dist/provenance.json').gitSha")"
+            printf '| artifact | sha256 |\n| --- | --- |\n'
+            node -e 'const p=require("./dist/provenance.json");for(const[f,h]of Object.entries(p.artifacts))console.log(`| \`${f}\` | \`${h}\` |`)'
+            printf '\nVerify an installed copy:\n\n'
+            printf '```sh\nshasum -a 256 ~/.config/opencode/plugins/opencode-token-norm.js\nshasum -a 256 ~/.config/opencode/scripts/usage-audit.py\n```\n'
+          } >> release-notes.md
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md \
+            dist/provenance.json

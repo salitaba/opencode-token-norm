@@ -2,7 +2,36 @@
 
 Distribution: the public npm package `opencode-token-norm`, plus a GitHub release created from `CHANGELOG.md`.
 
-Automation lives in [`.github/workflows/release.yml`](../.github/workflows/release.yml). Pushing a `v*` tag runs: tag/version guard, `npm ci`, `npm run build`, `npm publish` via npm Trusted Publishing (OIDC, provenance auto-generated), then `gh release create` with the matching changelog section as notes.
+Automation lives in [`.github/workflows/release.yml`](../.github/workflows/release.yml). Pushing a `v*` tag runs: tag/version guard, `npm ci`, `npm run build` + `npm run build:plugin`, `npm publish` via npm Trusted Publishing (OIDC, provenance auto-generated), then `gh release create` with the matching changelog section as notes plus a provenance table, attaching `dist/provenance.json`.
+
+## Provenance
+
+`npm run build:plugin` also runs `tools/provenance.mjs`, which writes `dist/provenance.json`:
+
+```json
+{
+  "name": "opencode-token-norm",
+  "version": "0.7.2",
+  "gitSha": "<40-hex HEAD>",
+  "gitDirty": false,
+  "algorithm": "sha256",
+  "artifacts": {
+    "dist/plugin.js": "<sha256>",
+    "scripts/usage-audit.py": "<sha256>"
+  }
+}
+```
+
+Those two files are the ones the installer copies into `~/.config/opencode`, where they stop being covered by the npm tarball's integrity hash — `usage-audit.py` is then executed from that copy. Publishing their digests is what lets a user answer "is the plugin I am running the one that was released?":
+
+```sh
+shasum -a 256 ~/.config/opencode/plugins/opencode-token-norm.js
+shasum -a 256 ~/.config/opencode/scripts/usage-audit.py
+```
+
+Compare against the release notes table, the attached `provenance.json`, or `dist/provenance.json` inside the published tarball. `test/packaging.test.ts` fails the build if a recorded digest does not match the packed bytes, so a stale `provenance.json` cannot ship.
+
+`gitDirty` should be `false` on any release; `true` means the tagged build included uncommitted changes. `null` means git could not be consulted (e.g. rebuilt from an unpacked tarball).
 
 ## npm authentication
 
@@ -18,6 +47,7 @@ The workflow uses Trusted Publishing; there is no `NPM_TOKEN` secret.
 - [ ] Feature/fix work is merged to `main` and `git status` is clean.
 - [ ] `npm run typecheck` passes.
 - [ ] `npm run build` passes and `dist/` is regenerated (it is gitignored; CI builds it).
+- [ ] `npm run build:plugin` passes and `dist/provenance.json` reports `"gitDirty": false` with the SHA you intend to tag.
 - [ ] Version bumped in `package.json` and `package-lock.json`: `npm version <major|minor|patch> --no-git-tag-version`.
 - [ ] `CHANGELOG.md` has a new `## [x.y.z] - YYYY-MM-DD` section, newest first, and updated compare links.
 - [ ] The changelog heading exactly matches `## [x.y.z]`; the workflow awk-extracts that section for the release notes and fails if empty.
@@ -41,7 +71,7 @@ npm view opencode-token-norm version
 gh release view vX.Y.Z
 ```
 
-Confirm the npm page shows the new version with the provenance badge, and the GitHub release notes match the changelog section.
+Confirm the npm page shows the new version with the provenance badge, and the GitHub release notes match the changelog section. Check the Provenance table in the notes names the tagged commit, and that `gh release view vX.Y.Z` lists `provenance.json` as an asset.
 
 ## Failure recovery
 

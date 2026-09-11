@@ -40,7 +40,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "build:plugin": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --legal-comments=none --outfile=dist/plugin.js",
+    "build:plugin": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --legal-comments=none --outfile=dist/plugin.js && npm run build:provenance",
+    "build:provenance": "node tools/provenance.mjs",
     "typecheck": "tsc --noEmit",
     "pretest": "npm run build:plugin",
     "test": "vitest run",
