@@ -19,8 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tree once per invocation and hardlinks `node_modules` + `package.json` +
   `package-lock.json` into each run's config dir for **both** arms before
   `opencode` starts. Verified: the plugin-load window drops to **0.213 s**,
-  inside the baseline range. The `10-string-sweep` cell needs a re-run for a
-  clean wall-time figure.
+  inside the baseline range. The re-run is complete
+  (`power-string-sweep-v2.jsonl`, 40/40, $0.2923): window **0.158 s vs 0.278 s**
+  per arm, wall difference **+2.6 s, p = 0.83** — was +27.4 s, p = 0.018. No
+  wall-time separation remains.
 
 ### Changed
 
@@ -32,12 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shows the gap is entirely startup, and inside startup it is one window:
   plugin loading, baseline mean 0.25 s vs treatment 23.22 s. Cause is the
   harness's per-run `HOME` isolation — only the treatment arm loads a plugin, so
-  only it pays a cold, empty `bun` install cache. Plugin runtime is not
-  involved: importing `dist/plugin.js` costs 0.24 s under bun, the tool hook
-  0.004 ms, the audit spawn ~45 ms. Adjusted for that window the difference is
-  +4.45 s, paired positive in 13 of 20 rather than 17 of 20 — documented as an
-  unattributed residual with **no** significance test. Docs only; the harness
-  fix (seeding a warm bun cache per run) and the re-run are still pending.
+  only it blocks on the plugin dependency install during startup (npm, not bun;
+  see Fixed above). Plugin runtime is not involved: importing `dist/plugin.js`
+  costs 0.24 s under bun, the tool hook 0.004 ms, the audit spawn ~45 ms.
+  Adjusted for that window the difference is +4.45 s, paired positive in 13 of
+  20 rather than 17 of 20 — superseded by the fixed-harness re-run at
+  **+2.6 s, p = 0.83**.
 - **README first screen.** The install command moved from line 69 to line 19.
   Badges cut from seven to three (version, test, license), the hand-written
   table of contents dropped in favour of GitHub's own heading outline, the

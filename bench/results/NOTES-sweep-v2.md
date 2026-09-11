@@ -44,6 +44,17 @@ direction once the install stops landing on treatment — but n=1 and the tool
 counts differ 65 vs 36, so that gap is task behavior, not startup. Wait for all
 40 before reading anything into it.
 
+## Outcome (2026-09-12)
+
+Sweep completed **40/40, $0.2923**. Plugin-load window: baseline mean 0.158 s
+(0.069-0.237), treatment 0.278 s (0.142-0.505) — every run sub-second, vs
+23.22 s broken. Wall: 102.1 s vs 104.8 s; permutation test **+2.6 s, p = 0.83**
+— the +27.4 s harness artifact is gone. The ~0.1 s residual window difference is
+consistent with the measured plugin import (0.08 s node / 0.24 s bun).
+
+Docs and CHANGELOG updated to the clean numbers; v2 records + summary committed
+alongside. Nothing left in this task.
+
 ## Next
 
 1. Confirm it finished: `tail -20 /tmp/opencode/sweep-v2.log`, and

@@ -1,0 +1,182 @@
+{
+  "model": "opencode-go/deepseek-v4-flash",
+  "repeats": 20,
+  "arms": [
+    "baseline",
+    "treatment"
+  ],
+  "tasks": [
+    "10-string-sweep"
+  ],
+  "planned_runs": 40,
+  "completed_runs": 40,
+  "stopped_early": false,
+  "spend_usd": 0.292349,
+  "max_cost_usd": 0.45,
+  "cells": [
+    {
+      "task": "10-string-sweep",
+      "arm": "baseline",
+      "task_class": "long",
+      "runs": 20,
+      "successes": 20,
+      "timed_out": 0,
+      "cost_usd": {
+        "n": 20,
+        "mean": 0.007243,
+        "median": 0.007829,
+        "sd": 0.001307,
+        "min": 0.004136,
+        "max": 0.009228,
+        "spread": 0.005092,
+        "ci95_lo": 0.006673,
+        "ci95_hi": 0.007771
+      },
+      "tool_calls": {
+        "n": 20,
+        "mean": 51.75,
+        "median": 63.5,
+        "sd": 15.396086,
+        "min": 34,
+        "max": 69,
+        "spread": 35,
+        "ci95_lo": 45.2,
+        "ci95_hi": 57.95
+      },
+      "effective_fresh": {
+        "n": 20,
+        "mean": 28761.3,
+        "median": 28480.9,
+        "sd": 5287.93836,
+        "min": 21528.4,
+        "max": 40069.8,
+        "spread": 18541.4,
+        "ci95_lo": 26501.78,
+        "ci95_hi": 31090.81
+      },
+      "wall_ms": {
+        "n": 20,
+        "mean": 102132.95,
+        "median": 94994,
+        "sd": 34600.857716,
+        "min": 63131,
+        "max": 188369,
+        "spread": 125238,
+        "ci95_lo": 88046.35,
+        "ci95_hi": 117384.4
+      },
+      "context_peak": {
+        "n": 20,
+        "mean": 21807.45,
+        "median": 23021.5,
+        "sd": 3085.751456,
+        "min": 16749,
+        "max": 25604,
+        "spread": 8855,
+        "ci95_lo": 20461.2,
+        "ci95_hi": 23102.6
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "10-string-sweep",
+      "arm": "treatment",
+      "task_class": "long",
+      "runs": 20,
+      "successes": 20,
+      "timed_out": 0,
+      "cost_usd": {
+        "n": 20,
+        "mean": 0.007375,
+        "median": 0.007344,
+        "sd": 0.002038,
+        "min": 0.003408,
+        "max": 0.013845,
+        "spread": 0.010437,
+        "ci95_lo": 0.006591,
+        "ci95_hi": 0.008307
+      },
+      "tool_calls": {
+        "n": 20,
+        "mean": 45.85,
+        "median": 36,
+        "sd": 17.586703,
+        "min": 5,
+        "max": 66,
+        "spread": 61,
+        "ci95_lo": 38.3,
+        "ci95_hi": 53.4
+      },
+      "effective_fresh": {
+        "n": 20,
+        "mean": 32094.48,
+        "median": 28514.2,
+        "sd": 13910.875725,
+        "min": 18855.6,
+        "max": 75633.2,
+        "spread": 56777.6,
+        "ci95_lo": 26889.01,
+        "ci95_hi": 38778.89
+      },
+      "wall_ms": {
+        "n": 20,
+        "mean": 104769.2,
+        "median": 96725.5,
+        "sd": 36726.110645,
+        "min": 62481,
+        "max": 200809,
+        "spread": 138328,
+        "ci95_lo": 90154,
+        "ci95_hi": 121395.85
+      },
+      "context_peak": {
+        "n": 20,
+        "mean": 22013.45,
+        "median": 20583,
+        "sd": 4053.025465,
+        "min": 14664,
+        "max": 28368,
+        "spread": 13704,
+        "ci95_lo": 20362.3,
+        "ci95_hi": 23764.6
+      },
+      "handoff_notes": 0
+    }
+  ],
+  "contrasts": [
+    {
+      "task": "10-string-sweep",
+      "task_class": "long",
+      "n_baseline": 20,
+      "n_treatment": 20,
+      "underpowered": false,
+      "metrics": {
+        "cost_usd": {
+          "diff": 0.000132,
+          "p_value": 0.8189,
+          "resamples": 10000
+        },
+        "tool_calls": {
+          "diff": -5.9,
+          "p_value": 0.3134,
+          "resamples": 10000
+        },
+        "effective_fresh": {
+          "diff": 3333.18,
+          "p_value": 0.371,
+          "resamples": 10000
+        },
+        "wall_ms": {
+          "diff": 2636.25,
+          "p_value": 0.8259,
+          "resamples": 10000
+        },
+        "context_peak": {
+          "diff": 206,
+          "p_value": 0.852,
+          "resamples": 10000
+        }
+      }
+    }
+  ]
+}
