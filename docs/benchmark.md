@@ -133,10 +133,18 @@ magnitude below 23 s.
 | treatment wall minus load | mean 51.72 s, median 39.66 s |
 
 The 4.45 s residual is **unattributed and untested** — no p-value was computed
-for it, and it must not be read as a real plugin cost. Fixing this properly
-means seeding a warm bun cache per run in the harness and re-running the cell;
-until that happens, treat the published wall-time figure as measuring the
-harness.
+for it, and it must not be read as a real plugin cost.
+
+**Confirmed in isolation.** Running `bun install` against the same
+`package.json`/`package-lock.json` the config dir carries (`@opencode-ai/plugin`
+1.18.30, 27 packages) takes **25.66 s** with an empty cache and **0.26 s** with
+the real one seeded — a 98x difference that matches the observed window.
+
+**Fixed in the harness.** `bench/run.mjs` now copies the real
+`~/.bun/install/cache` into every run's `home/.bun/install/cache`, for *both*
+arms, before `opencode` starts. The figures in this section were measured before
+that fix; the cell needs a re-run for a clean wall-time number, and until then
+the published wall-time figure should be read as measuring the harness.
 
 ## Variance study protocol (P0)
 

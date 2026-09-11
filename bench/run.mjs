@@ -27,6 +27,11 @@ const repo = resolve(benchDir, "..")
 const runsRoot = "/tmp/opencode/tn-bench-runs"
 const realDataHome = join(homedir(), ".local", "share", "opencode")
 const modelsCache = join(homedir(), ".cache", "opencode", "models.json")
+// Every run gets a fresh HOME, so a run that loads a plugin would otherwise
+// resolve @opencode-ai/plugin against an empty bun install cache -- 13-70 s of
+// startup that lands only on the treatment arm and shows up as wall time. Seed
+// the real cache into both arms so the arms stay symmetric and neither pays it.
+const bunCache = join(homedir(), ".bun", "install", "cache")
 
 function parseArgs(argv) {
   const args = {
@@ -287,6 +292,7 @@ function runOne({ taskName, arm, repeat, args, opencodeVersion, gitHead, stamp, 
   if (!existsSync(auth)) throw new Error(`no auth.json at ${auth}`)
   copyFileSync(auth, join(data, "opencode", "auth.json"))
   if (existsSync(modelsCache)) copyFileSync(modelsCache, join(home, ".cache", "opencode", "models.json"))
+  if (existsSync(bunCache)) cpSync(bunCache, join(home, ".bun", "install", "cache"), { recursive: true })
   if (arm === "treatment") installTreatment(config)
 
   const env = runEnv(home, config, data, workspace)
