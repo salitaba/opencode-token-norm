@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Config diagnostics: a malformed or misspelled `TOKEN_NORM_*` setting is
+  reported once at load (log line plus a toast) instead of silently falling back
+  to its default. Covers non-numeric or non-positive thresholds and budgets, an
+  out-of-range `TOKEN_NORM_CONTEXT_WARN`, a kill switch set to anything but `0`
+  or `1`, an empty `TOKEN_NORM_CHEAP_TOOLS`, and unrecognized `TOKEN_NORM_*`
+  keys. Values still fall back rather than failing the session.
+- Handoff integration-test matrix: child-session events, a late `session.created`,
+  the settle floor, `appendPrompt`/`submitPrompt` failures, and concurrent
+  handoffs.
+
+### Changed
+
+- `TOKEN_NORM_SETTLE_MS` and `TOKEN_NORM_SWITCH_WAIT_MS` are read in `config.ts`
+  like every other setting, so they are validated and diagnosed too.
+
 ## [0.7.2] - 2026-09-11
 
 ### Fixed

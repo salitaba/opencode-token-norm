@@ -60,3 +60,19 @@ TOKEN_NORM_CHEAP_TOOLS=todowrite,question,skill,read,grep,glob
 
 The variable replaces the default set rather than extending it, so list every
 tool you want exempt.
+
+## When a setting is wrong
+
+A malformed value falls back to the default rather than failing the session, so
+a typo used to leave you believing a budget was in force when none was. Every
+rejected value is now reported once at load, to the log and as a toast:
+
+```
+config: TOKEN_NORM_MODE="blocking" ignored -- expected one of observe, warn, handoff, block; using warn
+```
+
+Reported cases: a non-numeric or non-positive threshold or budget, a
+`TOKEN_NORM_CONTEXT_WARN` outside `0`-`1`, a kill switch set to anything but
+`0` or `1` (`false` and `off` do *not* disable a half), an empty
+`TOKEN_NORM_CHEAP_TOOLS`, and any unrecognized `TOKEN_NORM_*` variable, which is
+almost always a misspelling of a real one.

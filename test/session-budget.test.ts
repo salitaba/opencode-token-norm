@@ -7,7 +7,7 @@ vi.hoisted(() => {
   process.env.TOKEN_NORM_CHEAP_TOOLS = "todowrite,question,skill"
 })
 
-vi.mock("../src/log.js", () => ({ log: vi.fn() }))
+vi.mock("../src/log.js", () => ({ log: vi.fn(), logConfigDiagnostics: vi.fn(() => []) }))
 vi.mock("../src/audit.js", () => ({ runAudit: vi.fn(() => "effective fresh tokens: 123k") }))
 
 import { runAudit } from "../src/audit.js"

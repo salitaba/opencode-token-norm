@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, type Mock } from "vitest"
 
-vi.mock("../src/log.js", () => ({ log: vi.fn() }))
+vi.mock("../src/log.js", () => ({ log: vi.fn(), logConfigDiagnostics: vi.fn(() => []) }))
 vi.mock("../src/audit.js", () => ({ runAudit: vi.fn(() => "effective fresh tokens: 123k") }))
 
 const ZERO_TOKENS = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }

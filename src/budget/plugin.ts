@@ -19,7 +19,7 @@
 
 import type { Plugin } from "@opencode-ai/plugin"
 import { runAudit } from "../audit.js"
-import { log } from "../log.js"
+import { log, logConfigDiagnostics } from "../log.js"
 import { ANNOUNCE_AT, AUDIT_EVERY, BOUNDARY_AT, CHEAP_TOOLS, MAX_COST, MAX_EFFECTIVE_TOKENS, MODE } from "../config.js"
 import { blockedReason, budgetMetrics, contextLimitFor, evaluateBudget, overPressure } from "./evaluator.js"
 import { note } from "./format.js"
@@ -59,6 +59,12 @@ function pauseSessionID(event: any): string | undefined {
 }
 
 export const SessionBudgetPlugin: Plugin = async ({ client } = {} as any) => {
+  // A misspelled or malformed setting otherwise fails silently into the
+  // default, so the user believes a budget is in force that is not. Toast it
+  // too: a line in a log file nobody opens is the same as no report.
+  const problems = logConfigDiagnostics()
+  if (problems.length > 0) toast(client, problems.join("\n"))
+
   // The status tool must answer from the same accumulators that enforce the
   // budget, so the closure that owns `state` and `usage` is injected into the
   // tool factory. A module-global reader would let a second plugin instance in

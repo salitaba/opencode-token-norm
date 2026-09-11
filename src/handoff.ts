@@ -17,8 +17,8 @@ import { tool, type Plugin } from "@opencode-ai/plugin"
 import { randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { HANDOFF_DIR } from "./config.js"
-import { log } from "./log.js"
+import { HANDOFF_DIR, SETTLE_MS, SWITCH_WAIT } from "./config.js"
+import { log, logConfigDiagnostics } from "./log.js"
 
 // The TUI processes /tui/execute-command asynchronously: the request returns
 // once the command is dispatched, not once the new session is mounted.
@@ -30,8 +30,8 @@ import { log } from "./log.js"
 // so the wait uses the `session.created` event as evidence, with the old fixed
 // delay as a floor and a bounded fallback. Fast machines behave exactly as
 // before; a slow switch waits for proof instead of guessing.
-const SWITCH_SETTLE_MS = Number.parseInt(process.env.TOKEN_NORM_SETTLE_MS ?? "", 10) || 350
-const SWITCH_WAIT_MS = Number.parseInt(process.env.TOKEN_NORM_SWITCH_WAIT_MS ?? "", 10) || 2000
+const SWITCH_SETTLE_MS = SETTLE_MS
+const SWITCH_WAIT_MS = SWITCH_WAIT
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -80,6 +80,10 @@ function renderHandoff({ task, done, next, files, notes }: HandoffArgs): string 
 }
 
 export const HandoffPlugin: Plugin = async ({ client, directory }) => {
+  // Reported here as well as in the budget half, because either half can be
+  // loaded alone. The drain makes the second caller a no-op when both load.
+  logConfigDiagnostics()
+
   // Set while a handoff is waiting for its new session to exist; the event hook
   // below resolves it. `null` means no switch is in flight.
   let sessionSwitched: { startedAt: number; resolve: () => void } | null = null
