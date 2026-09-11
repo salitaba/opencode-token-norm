@@ -90,9 +90,49 @@ const HISTORY_MAX = 100
 const SEEN_PARTS_MAX = 500
 const EDITED_MAX = 100
 const RECENT_EDITS_MAX = 20
-// Deleted ids are remembered only long enough to swallow late zombie events;
-// the cap keeps that suppression window from becoming a second ledger.
+// Deleted ids are remembered exactly for a bounded window; the cap keeps that
+// suppression window from becoming a second ledger.
 const DELETED_MAX = 500
+// Eviction must not un-suppress an id whose spend was already folded into an
+// ancestor: a late step-finish would resurrect it and count the same dollars
+// twice. This fixed-size filter records every deleted id with no false
+// negatives, so eviction only costs precision: a false positive can swallow
+// events for an id whose `session.created` this process never saw (a resumed
+// session), never double-count. Undercounting is the failure direction the
+// ledger already prefers across restarts.
+const DELETED_FILTER_BITS = 1 << 16
+const DELETED_FILTER_HASHES = 4
+
+function hash32(value: string, seed: number): number {
+  let h = seed >>> 0
+  for (let i = 0; i < value.length; i++) h = Math.imul(h ^ value.charCodeAt(i), 0x01000193)
+  return h >>> 0
+}
+
+/** Fixed-memory membership over every deleted session id, including ids
+ * evicted from the exact `deleted` window above. */
+class DeletedFilter {
+  private bits = new Uint8Array(DELETED_FILTER_BITS / 8)
+
+  add(id: string): void {
+    for (const bit of this.indexes(id)) this.bits[bit >> 3] |= 1 << (bit & 7)
+  }
+
+  maybe(id: string): boolean {
+    for (const bit of this.indexes(id)) {
+      if ((this.bits[bit >> 3] & (1 << (bit & 7))) === 0) return false
+    }
+    return true
+  }
+
+  private indexes(id: string): number[] {
+    const h1 = hash32(id, 0x811c9dc5)
+    const h2 = hash32(id, 0x9e3779b9) | 1
+    const out: number[] = []
+    for (let i = 0; i < DELETED_FILTER_HASHES; i++) out.push(((h1 + Math.imul(i, h2)) >>> 0) % DELETED_FILTER_BITS)
+    return out
+  }
+}
 
 // Tool ids that write to disk. `file.edited` carries no sessionID (verified
 // against the installed runtime schema: `{ file: String }`), so per-session
@@ -199,9 +239,19 @@ export function attribution(s: SessionUsage): Attribution {
 
 export class UsageTracker {
   private sessions = new Map<string, SessionUsage>()
-  /** Recently deleted ids; suppress zombie events without a per-id entry. */
+  /** Recently deleted ids; exact fast-path suppression of zombie events. */
   private deleted = new Set<string>()
+  /** Fixed-memory record of every deleted id, including evicted ones. */
+  private tombstones = new DeletedFilter()
   private recentEdits: string[] = []
+
+  /** True when an id is known deleted and has no live entry, so events for it
+   * are stale. The live check lets an id restarted by `session.created`
+   * through even though the filter still remembers it. */
+  private suppressed(sessionID: string): boolean {
+    if (this.sessions.has(sessionID)) return false
+    return this.deleted.has(sessionID) || this.tombstones.maybe(sessionID)
+  }
 
   get(sessionID: string): SessionUsage {
     let s = this.sessions.get(sessionID)
@@ -226,7 +276,7 @@ export class UsageTracker {
   ): void {
     // A deleted session is gone from the ledger: late tool events must not
     // re-create it or move the totals already folded into its parent.
-    if (this.deleted.has(sessionID)) return
+    if (this.suppressed(sessionID)) return
     const s = this.get(sessionID)
     s.lastTool = tool
     if (budgeted) s.calls++
@@ -285,7 +335,7 @@ export class UsageTracker {
     if (type === "message.updated") {
       const info = props?.info
       if (info?.role === "assistant" && typeof info.sessionID === "string") {
-        if (this.deleted.has(info.sessionID)) return
+        if (this.suppressed(info.sessionID)) return
         const s = this.get(info.sessionID)
         if (typeof info.providerID === "string") s.providerID = info.providerID
         if (typeof info.modelID === "string") s.modelID = info.modelID
@@ -299,10 +349,8 @@ export class UsageTracker {
       // re-parent a fresh entry would move money between rollups. A real
       // `session.created` starts a fresh entry: past totals stay folded into
       // the tree, never un-spent.
-      if (this.deleted.has(info.id)) {
-        if (type !== "session.created") return
-        this.deleted.delete(info.id)
-      }
+      if (type === "session.created") this.deleted.delete(info.id)
+      else if (this.suppressed(info.id)) return
       this.setParent(this.get(info.id), info.parentID)
       return
     }
@@ -330,7 +378,7 @@ export class UsageTracker {
     if (typeof sessionID !== "string" || typeof partID !== "string") return
     // A late step for a deleted session is a duplicate or a zombie, never new
     // spend -- the totals were already folded into the parent.
-    if (this.deleted.has(sessionID)) return
+    if (this.suppressed(sessionID)) return
     const s = this.get(sessionID)
     // step-finish parts are published once, but dedupe by id is cheap and makes
     // a double delivery cost nothing instead of doubling the budget.
@@ -355,8 +403,9 @@ export class UsageTracker {
   }
 
   private setParent(s: SessionUsage, parentID: string | undefined): void {
-    // A stale update cannot attach a live entry under a deleted id.
-    if (parentID === s.parentID || (parentID !== undefined && this.deleted.has(parentID))) return
+    // A stale update cannot attach a live entry under a deleted id; an id
+    // restarted by `session.created` is live and stays attachable.
+    if (parentID === s.parentID || (parentID !== undefined && this.suppressed(parentID))) return
     if (s.parentID) this.sessions.get(s.parentID)?.childIDs.delete(s.sessionID)
     s.parentID = parentID
     if (parentID) this.get(parentID).childIDs.add(s.sessionID)
@@ -369,8 +418,9 @@ export class UsageTracker {
     // parent (money was spent; un-spending on delete lies), its live children
     // reparent to the grandparent so they stay in the root rollup, and the
     // entry is dropped. A long-lived server therefore keeps no ledger entry
-    // per deleted session; only a bounded window of ids is retained to swallow
-    // late zombie events (see `deleted`).
+    // per deleted session; the id is retained in a bounded exact window plus
+    // a fixed-memory filter, so late zombie events stay suppressed (see
+    // `deleted` and `tombstones`).
     const parentID = s.parentID
     const parent = parentID ? this.sessions.get(parentID) : undefined
     if (parent) parent.folded = fold(parent.folded, s)
@@ -383,6 +433,7 @@ export class UsageTracker {
     parent?.childIDs.delete(sessionID)
     this.sessions.delete(sessionID)
     addCapped(this.deleted, sessionID, DELETED_MAX)
+    this.tombstones.add(sessionID)
   }
 
   rootOf(sessionID: string): string {

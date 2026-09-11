@@ -100,7 +100,7 @@ paying for.
 
 ## The effective-fresh metric
 
-The audit's headline number is not raw input tokens:
+The audit's headline number — effective fresh tokens, a weighted input metric — is not raw input tokens:
 
 ```text
 effective fresh tokens = input + 0.1·cache_read + 1.25·cache_write
@@ -173,11 +173,12 @@ That was chosen deliberately, and it defines the contract:
   that was actually spent. Late events for a deleted id are ignored, never
   re-counted.
 - **Aggregation replaces tombstones.** A long-lived server holds no ledger
-  entry per deleted session; totals accumulate on the surviving ancestor. Only
-  a bounded window of recently deleted ids (500) is retained, so a late zombie
-  event cannot re-create an entry or move money between rollups. Persisting the
-  ledger is deliberately out of scope until budget enforcement needs to survive
-  process restarts.
+  entry per deleted session; totals accumulate on the surviving ancestor. A
+  bounded window of recently deleted ids (500) is kept exact, and a
+  fixed-memory filter remembers the rest with no false negatives, so a late
+  zombie event cannot re-create an entry or move money between rollups even
+  after eviction. Persisting the ledger is deliberately out of scope until
+  budget enforcement needs to survive process restarts.
 
 ## What it is not
 
