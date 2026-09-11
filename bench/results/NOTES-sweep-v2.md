@@ -28,9 +28,21 @@ node bench/run.mjs --task 10-string-sweep --repeats 20 \
   --out bench/results/power-string-sweep-v2.jsonl
 ```
 
-Console log at `/tmp/opencode/sweep-v2.log`. Budget $0.45, expected ~$0.27,
-~40 min for 40 runs. Records append one JSON object per line, so partial
-results are usable if it dies.
+Console log at `/tmp/opencode/sweep-v2.log`. Budget $0.45. Records append one
+JSON object per line, so partial results are usable if it dies.
+
+Revised from observed rate: 2 runs took 5:02, i.e. ~2.5 min/run, so **~100 min
+total** and ~$0.31 — not the ~40 min first estimated. First pair:
+
+```
+[1/40] r1 baseline   ok=true eff=33713 cost=$0.0081 wall=188.4s tools=65
+[2/40] r1 treatment  ok=true eff=35530 cost=$0.0074 wall=98.2s  tools=36
+```
+
+Treatment wall time is *below* baseline in that pair, which is the expected
+direction once the install stops landing on treatment — but n=1 and the tool
+counts differ 65 vs 36, so that gap is task behavior, not startup. Wait for all
+40 before reading anything into it.
 
 ## Next
 
