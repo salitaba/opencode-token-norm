@@ -301,6 +301,28 @@ describe("deletion semantics", () => {
     expect(after.sessions).toBe(folded.sessions + 550)
   })
 
+  it("bounds tombstone false positives across many deletions", () => {
+    const tracker = new UsageTracker()
+    for (let i = 0; i < 20_000; i++) {
+      const id = `ses_bulk_${i}`
+      tracker.handleEvent({ type: "session.created", properties: { info: { id, parentID: ROOT } } })
+      tracker.handleEvent({ type: "session.deleted", properties: { info: { id } } })
+    }
+
+    // These ids were never deleted or created. An unbounded filter collides
+    // with ~25% of them after 20k deletions, so the tracker would silently
+    // suppress late events for live sessions it has not seen this process.
+    const probes = 2000
+    let suppressed = 0
+    for (let i = 0; i < probes; i++) {
+      const id = `ses_probe_${i}`
+      step(tracker, id, tokens(100), 0.1)
+      if (!tracker.has(id)) suppressed++
+    }
+
+    expect(suppressed / probes).toBeLessThanOrEqual(0.05)
+  })
+
   it("a deleted root has no parent, so its own totals leave the live ledger", () => {
     const tracker = new UsageTracker()
     tracker.handleEvent({ type: "session.created", properties: { info: { id: "ses_orphan", parentID: ROOT } } })

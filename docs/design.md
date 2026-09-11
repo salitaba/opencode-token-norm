@@ -174,11 +174,14 @@ That was chosen deliberately, and it defines the contract:
   re-counted.
 - **Aggregation replaces tombstones.** A long-lived server holds no ledger
   entry per deleted session; totals accumulate on the surviving ancestor. A
-  bounded window of recently deleted ids (500) is kept exact, and a
-  fixed-memory filter remembers the rest with no false negatives, so a late
+  bounded window of recently deleted ids (500) is kept exact, and two rotating
+  fixed-memory filters remember the rest with no false negatives, so a late
   zombie event cannot re-create an entry or move money between rollups even
-  after eviction. Persisting the ledger is deliberately out of scope until
-  budget enforcement needs to survive process restarts.
+  after eviction. Rotation drops the oldest epoch, which bounds the
+  false-positive rate (worst case ~0.4% instead of growing with every
+  deletion); events for an id older than the two-epoch window are already
+  folded and may be forgotten. Persisting the ledger is deliberately out of
+  scope until budget enforcement needs to survive process restarts.
 
 ## What it is not
 

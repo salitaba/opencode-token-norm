@@ -95,13 +95,21 @@ const RECENT_EDITS_MAX = 20
 const DELETED_MAX = 500
 // Eviction must not un-suppress an id whose spend was already folded into an
 // ancestor: a late step-finish would resurrect it and count the same dollars
-// twice. This fixed-size filter records every deleted id with no false
-// negatives, so eviction only costs precision: a false positive can swallow
-// events for an id whose `session.created` this process never saw (a resumed
-// session), never double-count. Undercounting is the failure direction the
-// ledger already prefers across restarts.
-const DELETED_FILTER_BITS = 1 << 16
-const DELETED_FILTER_HASHES = 4
+// twice. These fixed-size filters record deleted ids with no false negatives,
+// so eviction only costs precision: a false positive can swallow events for an
+// id whose `session.created` this process never saw (a resumed session), never
+// double-count. Undercounting is the failure direction the ledger already
+// prefers across restarts.
+//
+// A single process-lifetime filter let false positives grow with every
+// deletion. Two rotating epochs bound that instead: each holds at most
+// TOMBSTONE_EPOCH_DELETIONS ids, the pair covers the most recent
+// 2 x TOMBSTONE_EPOCH_DELETIONS deletions, and the combined false-positive
+// rate stays under ~0.4% worst case. Late zombie events arrive within a turn,
+// so the two-epoch window is ample.
+const TOMBSTONE_FILTER_BITS = 1 << 15
+const TOMBSTONE_FILTER_HASHES = 4
+const TOMBSTONE_EPOCH_DELETIONS = 2000
 
 function hash32(value: string, seed: number): number {
   let h = seed >>> 0
@@ -109,10 +117,13 @@ function hash32(value: string, seed: number): number {
   return h >>> 0
 }
 
-/** Fixed-memory membership over every deleted session id, including ids
- * evicted from the exact `deleted` window above. */
-class DeletedFilter {
-  private bits = new Uint8Array(DELETED_FILTER_BITS / 8)
+/** Fixed-memory Bloom bitset. */
+class BloomBits {
+  private readonly bits: Uint8Array
+
+  constructor(private readonly bitCount: number) {
+    this.bits = new Uint8Array(bitCount / 8)
+  }
 
   add(id: string): void {
     for (const bit of this.indexes(id)) this.bits[bit >> 3] |= 1 << (bit & 7)
@@ -129,8 +140,32 @@ class DeletedFilter {
     const h1 = hash32(id, 0x811c9dc5)
     const h2 = hash32(id, 0x9e3779b9) | 1
     const out: number[] = []
-    for (let i = 0; i < DELETED_FILTER_HASHES; i++) out.push(((h1 + Math.imul(i, h2)) >>> 0) % DELETED_FILTER_BITS)
+    for (let i = 0; i < TOMBSTONE_FILTER_HASHES; i++) out.push(((h1 + Math.imul(i, h2)) >>> 0) % this.bitCount)
     return out
+  }
+}
+
+/** Deleted-id tombstones over two rotating epochs: an id stays suppressible
+ * while it is in the current or the previous epoch's bitset. Rotation drops
+ * the oldest generation so false positives stop compounding with deletions. */
+class TombstoneEpochs {
+  private current = new BloomBits(TOMBSTONE_FILTER_BITS)
+  private previous = new BloomBits(TOMBSTONE_FILTER_BITS)
+  private inserts = 0
+
+  add(id: string): void {
+    this.current.add(id)
+    if (++this.inserts >= TOMBSTONE_EPOCH_DELETIONS) this.rotate()
+  }
+
+  maybe(id: string): boolean {
+    return this.current.maybe(id) || this.previous.maybe(id)
+  }
+
+  private rotate(): void {
+    this.previous = this.current
+    this.current = new BloomBits(TOMBSTONE_FILTER_BITS)
+    this.inserts = 0
   }
 }
 
@@ -241,8 +276,8 @@ export class UsageTracker {
   private sessions = new Map<string, SessionUsage>()
   /** Recently deleted ids; exact fast-path suppression of zombie events. */
   private deleted = new Set<string>()
-  /** Fixed-memory record of every deleted id, including evicted ones. */
-  private tombstones = new DeletedFilter()
+  /** Rotating fixed-memory record of deleted ids, including evicted ones. */
+  private tombstones = new TombstoneEpochs()
   private recentEdits: string[] = []
 
   /** True when an id is known deleted and has no live entry, so events for it
@@ -419,7 +454,7 @@ export class UsageTracker {
     // reparent to the grandparent so they stay in the root rollup, and the
     // entry is dropped. A long-lived server therefore keeps no ledger entry
     // per deleted session; the id is retained in a bounded exact window plus
-    // a fixed-memory filter, so late zombie events stay suppressed (see
+    // rotating fixed-memory epochs, so late zombie events stay suppressed (see
     // `deleted` and `tombstones`).
     const parentID = s.parentID
     const parent = parentID ? this.sessions.get(parentID) : undefined
