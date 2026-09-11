@@ -155,6 +155,11 @@ export function contextAxis(metrics: BudgetMetric[]): Axis {
 const DRIVER_ORDER: AxisName[] = ["context", "budget", "calls"]
 
 function pickDriver(axes: Axes, base: PolicyState): Axis {
+  // At HEALTHY every axis matches, and the most-specific rule would then blame
+  // context -- including when the window could not even be resolved, which
+  // reads as "context is the problem" on a session with no problem. Nothing is
+  // driving anything yet, so attribute it to the axis that always exists.
+  if (base === "HEALTHY") return axes.calls
   for (const name of DRIVER_ORDER) {
     if (axes[name].state === base) return axes[name]
   }

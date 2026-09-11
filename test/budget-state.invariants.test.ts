@@ -5,8 +5,13 @@ import {
   maxState,
   ordinal,
   renderPolicy,
+  type BudgetMetric,
+  type PolicyInput,
+  type PolicySections,
   type PolicyState,
 } from "../src/budget/policy.js"
+import { ANNOUNCE_AT, type BudgetMode } from "../src/config.js"
+import { recommendationFor, snapshotFrom } from "../src/status.js"
 import { state, track } from "../src/budget/state.js"
 import { UsageTracker, type StepTokens } from "../src/usage.js"
 
@@ -503,5 +508,169 @@ describe("policy state machine invariants", () => {
     expect(lines?.filter((l) => l.startsWith("TOKEN NORM -- ATTENTION"))).toHaveLength(1)
     // Fixed order regardless of which sections are present.
     expect(lines?.indexOf("a")).toBeLessThan(lines?.indexOf("b") ?? -1)
+  })
+
+  // The cases above are worked examples: they show the machine doing the right
+  // thing on inputs a human chose. These are the properties those examples are
+  // instances OF, checked over the whole reachable input space, so a future
+  // threshold added as an axis cannot quietly break one of them on a
+  // combination nobody thought to write down.
+  describe("properties over the whole input space", () => {
+    const MODES: BudgetMode[] = ["observe", "warn", "handoff", "block"]
+
+    /** Every interesting combination: both sides of each threshold, both pause
+     * states, every mode, plus the no-metrics case (window unresolvable). */
+    function* inputs(): Generator<PolicyInput> {
+      const callCounts = [0, ANNOUNCE_AT - 1, ANNOUNCE_AT, ANNOUNCE_AT + 50]
+      const metricSets: BudgetMetric[][] = [
+        [],
+        [contextMetric(0)],
+        [contextMetric(WARN_AT - 1)],
+        [contextMetric(WARN_AT)],
+        [contextMetric(CONTEXT_LIMIT)],
+        [callsMetric(0, 10)],
+        [callsMetric(9, 10)],
+        [callsMetric(10, 10)],
+        [callsMetric(10, 10), contextMetric(CONTEXT_LIMIT)],
+        [callsMetric(0, 10), contextMetric(WARN_AT)],
+      ]
+      for (const calls of callCounts) {
+        for (const metrics of metricSets) {
+          for (const mode of MODES) {
+            for (const pauseArmed of [false, true]) {
+              yield { calls, metrics, mode, pauseArmed }
+            }
+          }
+        }
+      }
+    }
+
+    const ALL = [...inputs()]
+
+    // Nothing in the machine may depend on a clock, a counter, or a previous
+    // call. This is what lets the status tool evaluate without latching: asking
+    // where the session stands cannot change where it stands.
+    it("is idempotent -- the same input always yields the same verdict", () => {
+      for (const input of ALL) {
+        const a = evaluatePolicy(input)
+        const b = evaluatePolicy(input)
+        expect(b.state).toBe(a.state)
+        expect(b.base).toBe(a.base)
+        expect(b.exceeded).toBe(a.exceeded)
+        expect(b.driver.name).toBe(a.driver.name)
+        expect(b.driver.detail).toBe(a.driver.detail)
+      }
+    })
+
+    it("BLOCKED requires block mode AND a hard limit exceeded, and block mode with one always blocks", () => {
+      for (const input of ALL) {
+        const v = evaluatePolicy(input)
+        if (v.state === "BLOCKED") {
+          expect(input.mode).toBe("block")
+          expect(v.exceeded).toBe(true)
+        }
+        if (input.mode === "block" && v.exceeded) expect(v.state).toBe("BLOCKED")
+        // No other mode can ever produce it, whatever the numbers say.
+        if (input.mode !== "block") expect(v.state).not.toBe("BLOCKED")
+      }
+    })
+
+    it("HANDOFF_RECOMMENDED requires handoff mode AND pressure AND an armed pause", () => {
+      for (const input of ALL) {
+        const v = evaluatePolicy(input)
+        if (v.state === "HANDOFF_RECOMMENDED") {
+          expect(input.mode).toBe("handoff")
+          expect(input.pauseArmed).toBe(true)
+          expect(ordinal(v.base)).toBeGreaterThanOrEqual(ordinal("PRESSURE"))
+        }
+        // And the converse: those three together always produce it, so a
+        // pause can never be silently swallowed.
+        if (input.mode === "handoff" && input.pauseArmed && ordinal(v.base) >= ordinal("PRESSURE")) {
+          expect(v.state).toBe("HANDOFF_RECOMMENDED")
+        }
+      }
+    })
+
+    // Observe mode's whole contract: it measures exactly what warn measures.
+    // If this drifts, the status tool starts lying in the safest mode.
+    it("measures identically in observe and warn mode", () => {
+      for (const input of ALL) {
+        const observed = evaluatePolicy({ ...input, mode: "observe" })
+        const warned = evaluatePolicy({ ...input, mode: "warn" })
+        expect(observed.state).toBe(warned.state)
+        expect(observed.base).toBe(warned.base)
+      }
+    })
+
+    it("never reports a state below the max of its axes, and the driver is a real axis at that level", () => {
+      for (const input of ALL) {
+        const v = evaluatePolicy(input)
+        const axisMax = maxState(maxState(v.axes.calls.state, v.axes.budget.state), v.axes.context.state)
+        expect(v.base).toBe(axisMax)
+        // The mode may lift the state; it may never lower it.
+        expect(ordinal(v.state)).toBeGreaterThanOrEqual(ordinal(v.base))
+        expect(["calls", "budget", "context"]).toContain(v.driver.name)
+        if (v.base !== "HEALTHY") expect(v.axes[v.driver.name].state).toBe(v.base)
+      }
+    })
+
+    // The failure this whole module was written to stop: three thresholds
+    // landing on one tool call and stapling three reminder blocks onto it.
+    it("renders at most one block, with exactly one header, whatever is due", () => {
+      const every: PolicySections = {
+        boundary: ["B"],
+        announce: ["A"],
+        audit: ["U"],
+        budget: ["G"],
+        handoff: ["H"],
+      }
+      const keys = Object.keys(every) as Array<keyof PolicySections>
+      for (const input of ALL) {
+        const v = evaluatePolicy(input)
+        // Every subset of sections, including all five at once.
+        for (let mask = 0; mask < 1 << keys.length; mask++) {
+          const sections: PolicySections = {}
+          keys.forEach((key, bit) => {
+            if (mask & (1 << bit)) sections[key] = every[key]
+          })
+          const lines = renderPolicy(v, input.calls, sections)
+          if (mask === 0) {
+            expect(lines).toBeUndefined()
+            continue
+          }
+          const headers = (lines ?? []).filter((l) => l.startsWith("TOKEN NORM -- "))
+          expect(headers).toHaveLength(1)
+          expect(headers[0]).toContain(v.state)
+          // Fixed order, never interleaved: boundary, announce, audit, budget, handoff.
+          const present = ["B", "A", "U", "G", "H"].filter((t) => lines?.includes(t))
+          const positions = present.map((t) => lines?.indexOf(t) ?? -1)
+          expect(positions).toEqual([...positions].sort((a, b) => a - b))
+        }
+      }
+    })
+
+    // The status tool's contract, checked against the machine that feeds it.
+    it("always snapshots peak at or above current, with a recommendation drawn from peak", () => {
+      let peak: PolicyState = "HEALTHY"
+      for (const input of ALL) {
+        const v = evaluatePolicy(input)
+        peak = maxState(peak, v.state)
+        const snap = snapshotFrom({
+          toolCalls: input.calls,
+          context: 0,
+          cost: { used: 0 },
+          effectiveTokens: { used: 0 },
+          current: v.state,
+          peak,
+          driver: v.driver.name,
+        })
+        expect(ordinal(snap.policy.peak)).toBeGreaterThanOrEqual(ordinal(snap.policy.current))
+        expect(snap.state).toBe(snap.policy.peak)
+        expect(snap.recommendation).toBe(recommendationFor(snap.policy.peak))
+      }
+      // The sweep reaches the top of the ladder, so the assertions above were
+      // not all made on HEALTHY.
+      expect(peak).toBe("BLOCKED")
+    })
   })
 })

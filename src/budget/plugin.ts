@@ -95,7 +95,13 @@ export const SessionBudgetPlugin: Plugin = async ({ client }: BudgetPluginInput 
       contextLimit,
       cost: { used: rollup.costUsd, limit: MAX_COST },
       effectiveTokens: { used: rollup.effectiveTokens, limit: MAX_EFFECTIVE_TOKENS },
-      state: maxState(verdict.state, s?.level ?? "HEALTHY"),
+      // Two readings, deliberately not one: the verdict is this instant and can
+      // fall, s.level is the session high-water mark and cannot. Collapsing
+      // them (as the old single `state` did) meant a session that recovered
+      // still read PRESSURE with no way to tell recovery from ongoing trouble.
+      current: verdict.state,
+      peak: maxState(verdict.state, s?.level ?? "HEALTHY"),
+      driver: verdict.driver.name,
     })
   }
 

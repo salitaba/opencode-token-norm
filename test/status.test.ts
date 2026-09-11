@@ -28,7 +28,7 @@ describe("status snapshot", () => {
         context: 1234,
         cost: { used: 0.5 },
         effectiveTokens: { used: 100 },
-        state: "HEALTHY",
+        current: "HEALTHY",
       }),
     ).toEqual({
       session: { scope: "current-session", context: 1234, contextLimit: null },
@@ -38,7 +38,9 @@ describe("status snapshot", () => {
         cost: { used: 0.5, limit: null },
         effectiveTokens: { used: 100, limit: null },
       },
+      // `state` stays on the wire as the deprecated alias of policy.peak.
       state: "HEALTHY",
+      policy: { current: "HEALTHY", peak: "HEALTHY", driver: "calls" },
       recommendation: "continue",
     })
   })
@@ -50,7 +52,7 @@ describe("status snapshot", () => {
       contextLimit: 100,
       cost: { used: 1, limit: 2 },
       effectiveTokens: { used: 3, limit: 1000 },
-      state: "HEALTHY",
+      current: "HEALTHY",
     })
     expect(snap.session).toEqual({ scope: "current-session", context: 50, contextLimit: 100 })
     expect(snap.budget).toEqual({
@@ -70,6 +72,49 @@ describe("status snapshot", () => {
     expect(recommendationFor("PRESSURE")).toBe("warn")
     expect(recommendationFor("HANDOFF_RECOMMENDED")).toBe("handoff")
     expect(recommendationFor("BLOCKED")).toBe("block")
+  })
+
+  // The distinction the flat `state` field could not express: "this is bad
+  // right now" versus "this has been bad at some point".
+  it("reports current and peak separately, and keeps state as the peak alias", () => {
+    const snap = snapshotFrom({
+      toolCalls: 9,
+      context: 0,
+      cost: { used: 0 },
+      effectiveTokens: { used: 0 },
+      current: "ATTENTION",
+      peak: "PRESSURE",
+      driver: "calls",
+    })
+    expect(snap.policy).toEqual({ current: "ATTENTION", peak: "PRESSURE", driver: "calls" })
+    expect(snap.state).toBe("PRESSURE")
+    // Advice follows the peak: the money is already spent.
+    expect(snap.recommendation).toBe("warn")
+  })
+
+  it("never lets peak fall below current, even if a caller passes a stale peak", () => {
+    const snap = snapshotFrom({
+      toolCalls: 0,
+      context: 0,
+      cost: { used: 0 },
+      effectiveTokens: { used: 0 },
+      current: "BLOCKED",
+      peak: "HEALTHY",
+    })
+    expect(snap.policy.peak).toBe("BLOCKED")
+    expect(snap.state).toBe("BLOCKED")
+    expect(snap.recommendation).toBe("block")
+  })
+
+  it("defaults peak to current and driver to the calls axis", () => {
+    const snap = snapshotFrom({
+      toolCalls: 0,
+      context: 0,
+      cost: { used: 0 },
+      effectiveTokens: { used: 0 },
+      current: "PRESSURE",
+    })
+    expect(snap.policy).toEqual({ current: "PRESSURE", peak: "PRESSURE", driver: "calls" })
   })
 
   it("renders parseable JSON", () => {
@@ -93,7 +138,7 @@ describe("status snapshot", () => {
       context: 10,
       cost: { used: 0 },
       effectiveTokens: { used: 0 },
-      state: "HEALTHY",
+      current: "HEALTHY",
     })
     expect(await readStatus(() => ok, "ses_ok")).toEqual(ok)
   })
@@ -105,7 +150,7 @@ describe("status snapshot", () => {
         context: 0,
         cost: { used: 0 },
         effectiveTokens: { used: 0 },
-        state: "HEALTHY",
+        current: "HEALTHY",
       })
     const first: any = createStatusTool(() => snapshotFor(1))
     const second: any = createStatusTool(() => snapshotFor(2))
@@ -166,6 +211,7 @@ describe("token_norm_status tool", () => {
         effectiveTokens: { used: 0, limit: null },
       },
       state: "HEALTHY",
+      policy: { current: "HEALTHY", peak: "HEALTHY", driver: "calls" },
       recommendation: "continue",
     })
   })

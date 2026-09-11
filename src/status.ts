@@ -15,7 +15,7 @@
 // query must never break a session.
 
 import { tool } from "@opencode-ai/plugin"
-import type { PolicyState } from "./budget/policy.js"
+import { maxState, type AxisName, type PolicyState } from "./budget/policy.js"
 
 export type Recommendation = "continue" | "warn" | "handoff" | "block"
 
@@ -23,6 +23,27 @@ export interface StatusMetric {
   used: number
   /** null when no limit is configured -- distinct from a zero/absent limit. */
   limit: number | null
+}
+
+/** Severity reported as two distinct readings.
+ *
+ * `state` alone was ambiguous: it carried the session's monotone HIGH-WATER
+ * mark, so a session that touched PRESSURE at call 90 and then finished its
+ * expensive work still reported PRESSURE at call 120 with nothing wrong right
+ * now. Callers could not tell "this is bad" from "this has been bad", and the
+ * only way to find out was to read the plugin source.
+ *
+ * So both readings are named:
+ *   current -- severity of THIS instant, recomputed from the axes every call.
+ *              It can fall, e.g. when a subagent's context is no longer the
+ *              driver, or when the session tree shrinks after a deletion.
+ *   peak    -- the highest severity the session has ever reached. Monotone by
+ *              construction; this is what `state` has always meant. */
+export interface PolicyStatus {
+  current: PolicyState
+  peak: PolicyState
+  /** The axis that produced `current`: which number to look at first. */
+  driver: AxisName
 }
 
 export interface StatusSnapshot {
@@ -39,9 +60,13 @@ export interface StatusSnapshot {
     cost: StatusMetric
     effectiveTokens: StatusMetric
   }
-  /** The policy state this recommendation was derived from, reported verbatim
-   * so a caller can see the severity without inferring it from the advice. */
+  /** DEPRECATED alias of `policy.peak`, kept so existing readers of the flat
+   * field keep working. New callers should read `policy`. */
   state: PolicyState
+  policy: PolicyStatus
+  /** Derived from `policy.peak`, not `policy.current`: a session that has
+   * already crossed a threshold has already spent the money, so the advice
+   * does not relax just because the last tool call was cheap. */
   recommendation: Recommendation
 }
 
@@ -52,8 +77,14 @@ export interface StatusFacts {
   contextLimit?: number
   cost: { used: number; limit?: number }
   effectiveTokens: { used: number; limit?: number }
-  /** The verdict from the same policy machine that drives enforcement. */
-  state: PolicyState
+  /** The instantaneous verdict from the same policy machine that drives
+   * enforcement. */
+  current: PolicyState
+  /** The session's stored high-water mark. Defaults to `current` when the
+   * session has no stored level yet (unknown or brand-new session). */
+  peak?: PolicyState
+  /** Defaults to the calls axis, which is the one that always exists. */
+  driver?: AxisName
 }
 
 export type StatusProvider = (
@@ -90,6 +121,10 @@ export function recommendationFor(state: PolicyState): Recommendation {
 }
 
 export function snapshotFrom(facts: StatusFacts): StatusSnapshot {
+  // peak is forced above current even if a caller passes a stale stored level:
+  // the snapshot must satisfy its own invariant (peak >= current) regardless of
+  // what the owning plugin hands in.
+  const peak = maxState(facts.peak ?? facts.current, facts.current)
   return {
     session: {
       scope: "current-session",
@@ -102,8 +137,9 @@ export function snapshotFrom(facts: StatusFacts): StatusSnapshot {
       cost: metric(facts.cost.used, facts.cost.limit),
       effectiveTokens: metric(facts.effectiveTokens.used, facts.effectiveTokens.limit),
     },
-    state: facts.state,
-    recommendation: recommendationFor(facts.state),
+    state: peak,
+    policy: { current: facts.current, peak, driver: facts.driver ?? "calls" },
+    recommendation: recommendationFor(peak),
   }
 }
 
@@ -113,7 +149,7 @@ export function emptyStatus(): StatusSnapshot {
     context: 0,
     cost: { used: 0 },
     effectiveTokens: { used: 0 },
-    state: "HEALTHY",
+    current: "HEALTHY",
   })
 }
 
@@ -142,9 +178,12 @@ export function createStatusTool(provider?: StatusProvider) {
       "(toolCalls, cost, effectiveTokens) rolls up the whole session tree -- root",
       "plus descendant sessions; session.context is the current session's window",
       "only. Each metric is { used, limit }, limit null when unconfigured.",
-      "state is the policy state (HEALTHY, ATTENTION, PRESSURE,",
-      "HANDOFF_RECOMMENDED, BLOCKED) and never decreases within a session;",
-      "recommendation is continue | warn | handoff | block, derived from it.",
+      "policy.current is severity right now and can fall; policy.peak is the",
+      "highest this session has reached and never decreases; policy.driver names",
+      "the axis (calls | budget | context) behind current. States are HEALTHY,",
+      "ATTENTION, PRESSURE, HANDOFF_RECOMMENDED, BLOCKED. recommendation is",
+      "continue | warn | handoff | block, derived from peak. Top-level `state`",
+      "is a deprecated alias of policy.peak.",
       "",
       "Use before starting a large task, when the user asks what the session has cost,",
       "or to check whether the token-norm plugin would warn, hand off, or block now.",

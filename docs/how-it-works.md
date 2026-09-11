@@ -40,6 +40,91 @@ With Token Norm
              the agent reads it in-band
 ```
 
+**Inside the budget half**, the path from an event to injected text is a
+one-way pipeline, and each stage is allowed to know only about the stage above
+it:
+
+```text
+  OpenCode events                tool.execute.after · message.updated
+        │                        session.idle · todo.updated · step-finish
+        ▼
+  ┌─────────────┐   measurement only: counts, cost, tokens, context window.
+  │   usage +   │   Never decides anything. If the window cannot be resolved
+  │   state     │   it stays unknown — no default is guessed.
+  └─────────────┘
+        ▼
+  ┌─────────────┐   pure function: numbers in, verdict out. Three axes
+  │   policy    │   (calls · budget · context), max across them, then the
+  │   machine   │   mode lifts the result. Severity is decided HERE, once.
+  └─────────────┘
+        ▼
+  ┌─────────────┐   ONE block per tool call or none, fixed section order,
+  │  rendering  │   one header naming the state and its driver.
+  └─────────────┘
+        │
+   ┌────┼─────────┬──────────┐
+   ▼    ▼         ▼          ▼
+ observe warn  handoff     block
+ (log)  (inject) (+skeleton) (refuse)
+        │
+        ▼
+   tool output the agent is already reading
+        ▲
+        └── token_norm_status reads the SAME machine, without latching
+```
+
+The single-evaluation rule is the point. Before it, eight independent `if`s
+each owned a threshold, three could fire on one tool call and staple three
+separate reminder blocks onto it, two returned early and silently deferred
+another's crossing by a call, and the status tool answered from a fourth
+disconnected ladder — so it could say `continue` while the hook was warning.
+Adding a threshold now means adding an **axis**, not another `if`.
+
+### One session, call by call
+
+A `handoff`-mode session with `TOKEN_NORM_MAX_COST=5`, on default thresholds:
+
+```text
+call 1–24    nothing injected. Counting only.
+
+call 25      ANNOUNCE — calls axis reaches ANNOUNCE_AT.
+             state HEALTHY → ATTENTION (peak now ATTENTION).
+             Injected: state the remaining calls, the caps in force, and which
+             slice could ship now behind a handoff. Once per session.
+
+call 38      user sends a new message ("now do all the others").
+             Session is past BOUNDARY_AT? Not yet (38 < 40) — nothing armed.
+
+call 44      user sends another new message. Past BOUNDARY_AT now, so the
+             boundary arms, keyed on that message's id.
+
+call 45      BOUNDARY — first tool call after the message.
+             Injected: this is a new task; the "do everything" override granted
+             for the last one does not carry. Fires once per message, never
+             again for that id.
+
+call 60      AUDIT — the plugin runs usage-audit.py itself, read-only, and
+             staples the numbers on. The agent has the result in hand; there is
+             no command left to defer.
+
+call 71      cost crosses 5.00 USD. Budget axis → PRESSURE, peak → PRESSURE.
+             Injected: the crossing, latched so a sustained overage says it
+             once rather than on every call afterwards.
+
+call 71+     session goes idle (or every todo completes) → a pause is armed.
+
+call 72      HANDOFF RECOMMENDED — pressure AND an armed pause, in handoff mode.
+             Injected: the handoff skeleton. The pause is consumed by this call
+             whether or not it fires, so a handoff can never surface mid-task.
+
+             (In block mode instead: the next non-cheap tool call is refused.
+             todowrite, question, skill and handoff stay open as the exit.)
+```
+
+Nothing in that sequence ever stapled two blocks onto one tool call, and the
+agent could have called `token_norm_status` at any point to get the same
+severity the hook was about to inject.
+
 ## 1. Task boundary detection (the missing enforcement)
 
 The expensive failure is not a long task. It is a **new** task inheriting an old
@@ -140,10 +225,72 @@ would give right now. That value reflects the configured enforcement policy —
 the action the current mode and budget state would trigger (`block` only in
 `block` mode over a hard limit, `handoff` when `handoff` mode sees pressure or
 an exceeded limit, `warn` for any other crossing, otherwise `continue`) — not a
-semantic judgment that the task should stop being worked on. Scopes are
-explicit in the payload: `budget` figures
-(`toolCalls`, `cost`, `effectiveTokens`) roll up the whole session tree (root
-plus descendants), while `session.context` is the current session's window
-alone. It reads the same accumulators the enforcement path uses, so status and
-reminders cannot disagree; unknown sessions report zeros. The tool is registered
-by the budget plugin, so it is absent when that plugin is not loaded.
+semantic judgment that the task should stop being worked on. It reads the same
+accumulators the enforcement path uses, so status and reminders cannot
+disagree; unknown sessions report zeros. The tool is registered by the budget
+plugin, so it is absent when that plugin is not loaded.
+
+### The payload
+
+```json
+{
+  "session": { "scope": "current-session", "context": 8631, "contextLimit": 1000000 },
+  "budget": {
+    "scope": "session-tree",
+    "toolCalls": 58,
+    "cost": { "used": 1.42, "limit": 5 },
+    "effectiveTokens": { "used": 412000, "limit": null }
+  },
+  "state": "PRESSURE",
+  "policy": { "current": "ATTENTION", "peak": "PRESSURE", "driver": "calls" },
+  "recommendation": "warn"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `session.context` | Context tokens in **this** session only — a window is not a tree |
+| `session.contextLimit` | The model window, or `null` when it could not be resolved. Never guessed; context pressure is simply not evaluated |
+| `budget.*` | Rolls up the **whole session tree**: root plus every descendant (subagents included) |
+| `budget.toolCalls` | **Weighted** calls, not raw — see [weighted vs. raw](#weighted-vs-raw-calls) |
+| `*.limit` | `null` means unconfigured, which is distinct from a limit of zero |
+| `policy.current` | Severity **right now**, recomputed from the axes on every call. It can fall |
+| `policy.peak` | Highest severity this session has **ever** reached. Monotone; never falls |
+| `policy.driver` | Which axis (`calls`, `budget`, `context`) produced `current` — the number to look at first |
+| `state` | Deprecated alias of `policy.peak`, kept for existing readers |
+| `recommendation` | `continue \| warn \| handoff \| block`, derived from `peak` |
+
+**`current` vs. `peak` is the distinction to get right.** A session that
+crossed the context warn line at call 90, handed the heavy work to a subagent,
+and is now writing a summary reports `current: "HEALTHY"` with
+`peak: "PRESSURE"`. Both are true and they answer different questions: *is
+anything wrong this instant* versus *has this session already paid*. The
+`recommendation` follows `peak`, because the money is already spent and advice
+that relaxes on one cheap tool call is advice that never lands.
+
+`peak` is monotone on purpose. A metric hovering at 0.799/0.801 of the window
+would otherwise re-arm and re-fire every other tool call, and a reminder that
+repeats becomes wallpaper — the failure the boundary dedupe exists to prevent.
+
+### Weighted vs. raw calls
+
+The plugin keeps **two** call counts and they are allowed to disagree:
+
+```text
+raw calls        →  behavioral checkpoints   (announce @25, boundary @40, audit @60,
+                    per session                 and the policy machine's calls axis)
+
+weighted calls   →  budget accounting        (TOKEN_NORM_MAX_TOOL_CALLS,
+                    per session tree            and budget.toolCalls in the status payload)
+```
+
+So a header reading `calls 37` alongside `budget.toolCalls: 52` is correct, not
+a bug: 37 is how long *this conversation* has run, while 52 is what the *whole
+tree* has consumed after weighting. They diverge for three reasons — subagent
+calls count toward the tree but not this session, `TOKEN_NORM_TOOL_WEIGHTS` /
+`TOKEN_NORM_PHASE_WEIGHTS` scale the budget number only, and cheap tools count
+toward neither.
+
+Weights deliberately never touch the raw count, so configuring them can never
+delay or advance a reminder. See
+[configuration](configuration.md#budgets-opt-in-measured) for the syntax.
