@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `TOKEN_NORM_SETTLE_MS` and `TOKEN_NORM_SWITCH_WAIT_MS` are read in `config.ts`
   like every other setting, so they are validated and diagnosed too.
+- The opencode client and event payloads are no longer typed as `any`. `src/host.ts`
+  declares narrow interfaces covering only the host fields this plugin actually
+  reads, so a renamed or removed host method now fails at build time instead of
+  disappearing into a runtime catch.
+
+### Fixed
+
+- `session.deleted` events missing `info.id`, and user messages missing
+  `sessionID`, no longer throw into the event handler's catch-all (which also
+  skipped handoff arming and the task-boundary check for that event).
 
 ## [0.7.2] - 2026-09-11
 

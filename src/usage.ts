@@ -15,6 +15,8 @@
 // output sizes, never presented as provider-measured tokens: bytes are not
 // tokens and chunking means neither one converts linearly into the other.
 
+import type { NormEvent, RawTokens, StepPart, ToolArgs } from "./host.js"
+
 export interface StepTokens {
   input: number
   output: number
@@ -68,10 +70,9 @@ export interface SessionUsage {
   folded?: Rollup
 }
 
-export interface NormEvent {
-  type?: string
-  properties?: any
-}
+// The event shape lives in host.ts with the rest of the host boundary; it is
+// re-exported here because this module has always been its import site.
+export type { NormEvent } from "./host.js"
 
 export interface Bloat {
   medianDelta: number
@@ -204,7 +205,7 @@ function pushCapped<T>(list: T[], value: T, max: number): void {
   if (list.length > max) list.splice(0, list.length - max)
 }
 
-function normalizeTokens(tokens: any): StepTokens {
+function normalizeTokens(tokens: RawTokens | undefined): StepTokens {
   return {
     input: tokens?.input ?? 0,
     output: tokens?.output ?? 0,
@@ -305,7 +306,7 @@ export class UsageTracker {
   noteToolCall(
     sessionID: string,
     tool: string,
-    args: any,
+    args: ToolArgs | undefined,
     output: { output?: string } | undefined,
     budgeted: boolean,
   ): void {
@@ -407,7 +408,7 @@ export class UsageTracker {
     }
   }
 
-  private applyStep(part: any): void {
+  private applyStep(part: StepPart): void {
     const sessionID = part?.sessionID
     const partID = part?.id
     if (typeof sessionID !== "string" || typeof partID !== "string") return

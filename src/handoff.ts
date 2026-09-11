@@ -13,11 +13,12 @@
 // Pass submit: false to stop at the pre-filled prompt instead. That beat exists
 // for handoffs the user may want to redirect before any tokens burn.
 
-import { tool, type Plugin } from "@opencode-ai/plugin"
+import { tool, type Plugin, type PluginInput } from "@opencode-ai/plugin"
 import { randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { HANDOFF_DIR, SETTLE_MS, SWITCH_WAIT } from "./config.js"
+import { asNormEvent, type HandoffClient } from "./host.js"
 import { log, logConfigDiagnostics } from "./log.js"
 
 // The TUI processes /tui/execute-command asynchronously: the request returns
@@ -51,12 +52,12 @@ interface HandoffArgs {
 //
 // Resolved from the live agent list instead of a hardcoded name list, so agents
 // the user adds later are classified correctly without touching this file.
-async function isSubagent(client: any, agentName: string | undefined): Promise<boolean> {
+async function isSubagent(client: HandoffClient, agentName: string | undefined): Promise<boolean> {
   if (!agentName) return false
   try {
     const res = await client.app.agents()
-    const agents = res?.data ?? res
-    const found = Array.isArray(agents) ? agents.find((a: any) => a.name === agentName) : undefined
+    const agents = Array.isArray(res) ? res : res?.data
+    const found = Array.isArray(agents) ? agents.find((a) => a?.name === agentName) : undefined
     return found?.mode === "subagent"
   } catch {
     // If the lookup fails, allow. A false block would strand the primary agent
@@ -79,7 +80,12 @@ function renderHandoff({ task, done, next, files, notes }: HandoffArgs): string 
   return lines.join("\n")
 }
 
-export const HandoffPlugin: Plugin = async ({ client, directory }) => {
+// Only the TUI calls the handoff drives, plus the directory it stamps into the
+// note. Declared narrowly so a host rename fails at build time rather than at
+// the one moment the user is counting on the split to work.
+type HandoffPluginInput = Partial<Omit<PluginInput, "client">> & { client: HandoffClient }
+
+export const HandoffPlugin: Plugin = async ({ client, directory }: HandoffPluginInput) => {
   // Reported here as well as in the budget half, because either half can be
   // loaded alone. The drain makes the second caller a no-op when both load.
   logConfigDiagnostics()
@@ -89,8 +95,9 @@ export const HandoffPlugin: Plugin = async ({ client, directory }) => {
   let sessionSwitched: { startedAt: number; resolve: () => void } | null = null
 
   return {
-    event: async ({ event }) => {
+    event: async (input) => {
       if (!sessionSwitched) return
+      const event = asNormEvent(input?.event)
       if (event?.type !== "session.created") return
       const info = event.properties?.info
       // Subagent sessions also emit session.created; only a primary (parentless)

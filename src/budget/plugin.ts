@@ -17,8 +17,9 @@
 // It never edits args and, outside opt-in `block` mode, never fails a tool
 // call: a wrong guess here must cost a few lines of text, not a broken session.
 
-import type { Plugin } from "@opencode-ai/plugin"
+import type { Plugin, PluginInput } from "@opencode-ai/plugin"
 import { runAudit } from "../audit.js"
+import { asNormEvent, type BudgetClient, type NormEvent, type ToastClient } from "../host.js"
 import { log, logConfigDiagnostics } from "../log.js"
 import { ANNOUNCE_AT, AUDIT_EVERY, BOUNDARY_AT, CHEAP_TOOLS, MAX_COST, MAX_EFFECTIVE_TOKENS, MODE } from "../config.js"
 import { blockedReason, budgetMetrics, contextLimitFor, evaluateBudget, overPressure } from "./evaluator.js"
@@ -35,7 +36,7 @@ import { createStatusTool, snapshotFrom, type StatusProvider } from "../status.j
 
 const HANDOFF_TOOL = "handoff"
 
-function toast(client: any, message: string): void {
+function toast(client: ToastClient | undefined, message: string): void {
   try {
     Promise.resolve(
       client?.tui?.showToast?.({ body: { title: "Token norm", message, variant: "warning" } }),
@@ -48,17 +49,22 @@ function toast(client: any, message: string): void {
 /** The two pauses a handoff may ride on: the session went idle, or every todo
  * is complete. The model has stopped, so a recommendation does not interrupt
  * work in flight. */
-function pauseSessionID(event: any): string | undefined {
+function pauseSessionID(event: NormEvent | undefined): string | undefined {
   const id = event?.properties?.sessionID
   if (typeof id !== "string") return undefined
   if (event?.type === "session.idle") return id
   if (event?.type !== "todo.updated") return undefined
   const todos = event.properties?.todos
-  const done = Array.isArray(todos) && todos.length > 0 && todos.every((t: any) => t?.status === "completed")
+  const done = Array.isArray(todos) && todos.length > 0 && todos.every((t) => t?.status === "completed")
   return done ? id : undefined
 }
 
-export const SessionBudgetPlugin: Plugin = async ({ client } = {} as any) => {
+// The host passes a full client; this plugin declares only the calls it makes.
+// The default exists so the plugin can be constructed with no input at all --
+// a client is never required, and every call site already guards for it.
+type BudgetPluginInput = Partial<Omit<PluginInput, "client">> & { client?: BudgetClient }
+
+export const SessionBudgetPlugin: Plugin = async ({ client }: BudgetPluginInput = {}) => {
   // A misspelled or malformed setting otherwise fails silently into the
   // default, so the user believes a budget is in force that is not. Toast it
   // too: a line in a log file nobody opens is the same as no report.
@@ -100,8 +106,9 @@ export const SessionBudgetPlugin: Plugin = async ({ client } = {} as any) => {
     // "do everything" override granted for the first. Overrides are per-task;
     // nothing enforced that. This fires on the NEXT tool call after such a
     // message, which is the earliest point the agent cannot skip past.
-    event: async ({ event }) => {
+    event: async (input) => {
       try {
+        const event = asNormEvent(input?.event)
         usage.handleEvent(event)
 
         // Handoff mode: a pause plus budget/context pressure is the natural
@@ -120,12 +127,16 @@ export const SessionBudgetPlugin: Plugin = async ({ client } = {} as any) => {
         // long-lived server would accumulate one entry per session ever
         // opened. The session is gone; keeping its score buys nothing.
         if (event?.type === "session.deleted") {
-          state.delete(event.properties.info.id)
+          // Guarded rather than assumed: an event missing `info.id` used to
+          // throw into the catch below, which silently skipped the handoff
+          // arming and boundary logic for that event too.
+          const deletedID = event.properties?.info?.id
+          if (deletedID) state.delete(deletedID)
           return
         }
         if (event?.type !== "message.updated") return
         const info = event.properties?.info
-        if (info?.role !== "user") return
+        if (info?.role !== "user" || !info.sessionID) return
         const s = state.get(info.sessionID)
         if (!s || s.calls < BOUNDARY_AT) return
         // Dedupe on MESSAGE IDENTITY, not on call count.

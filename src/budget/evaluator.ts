@@ -9,6 +9,7 @@ import {
   MODE,
   type BudgetMode,
 } from "../config.js"
+import type { BudgetClient } from "../host.js"
 import { log } from "../log.js"
 import type { Rollup } from "../usage.js"
 import { fmtCount, fmtTokens, fmtUsd } from "./format.js"
@@ -31,7 +32,10 @@ const modelContextLimits = new Map<string, number>()
  * are not picked up until opencode restarts; TOKEN_NORM_CONTEXT_LIMIT bypasses
  * the cache entirely. When neither the client lookup nor the env var yields a
  * number, context pressure is simply disabled -- never guessed. */
-export async function contextLimitFor(client: any, sessionID: string): Promise<number | undefined> {
+export async function contextLimitFor(
+  client: BudgetClient | undefined,
+  sessionID: string,
+): Promise<number | undefined> {
   if (CONTEXT_LIMIT !== undefined) return CONTEXT_LIMIT
   const s = usage.get(sessionID)
   if (!s.providerID || !s.modelID) return undefined
@@ -42,7 +46,7 @@ export async function contextLimitFor(client: any, sessionID: string): Promise<n
     const res = await client?.config?.providers?.()
     const providers = res?.data?.providers ?? res?.providers
     if (!Array.isArray(providers)) return undefined
-    const model = providers.find((p: any) => p?.id === s.providerID)?.models?.[s.modelID]
+    const model = providers.find((p) => p?.id === s.providerID)?.models?.[s.modelID]
     const limit = typeof model?.limit?.context === "number" ? model.limit.context : 0
     modelContextLimits.set(key, limit)
     return limit > 0 ? limit : undefined
@@ -114,7 +118,7 @@ function budgetLines(metrics: BudgetMetric[], crossed: string[]): string[] {
 /** Fires once per crossing per metric; returns lines to inject, or undefined
  * in observe mode (log only) and when nothing new crossed. */
 export async function evaluateBudget(
-  client: any,
+  client: BudgetClient | undefined,
   sessionID: string,
   s: SessionState,
 ): Promise<string[] | undefined> {
@@ -138,13 +142,16 @@ export async function evaluateBudget(
   return budgetLines(metrics, crossed)
 }
 
-export async function overPressure(client: any, sessionID: string): Promise<boolean> {
+export async function overPressure(client: BudgetClient | undefined, sessionID: string): Promise<boolean> {
   const limit = await contextLimitFor(client, sessionID)
   const rollup = usage.rollup(usage.rootOf(sessionID))
   return budgetMetrics(sessionID, rollup, limit).some((m) => m.used >= m.warnAt)
 }
 
-export async function blockedReason(client: any, sessionID: string): Promise<string | undefined> {
+export async function blockedReason(
+  client: BudgetClient | undefined,
+  sessionID: string,
+): Promise<string | undefined> {
   const limit = await contextLimitFor(client, sessionID)
   const rollup = usage.rollup(usage.rootOf(sessionID))
   const over = budgetMetrics(sessionID, rollup, limit).filter((m) => m.used >= m.limit)
