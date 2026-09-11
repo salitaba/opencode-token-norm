@@ -38,6 +38,7 @@ function parseArgs(argv) {
     maxCost: 1.0,
     repeats: 1,
     out: null,
+    resummarize: null,
   }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
@@ -48,6 +49,7 @@ function parseArgs(argv) {
     else if (a === "--timeout") args.timeout = Number(argv[++i])
     else if (a === "--max-cost") args.maxCost = Number(argv[++i])
     else if (a === "--repeats") args.repeats = Math.max(1, Math.floor(Number(argv[++i])) || 1)
+    else if (a === "--resummarize") args.resummarize = argv[++i]
     else if (a === "--out") args.out = argv[++i]
     else throw new Error(`unknown arg ${a}`)
   }
@@ -348,11 +350,23 @@ function runOne({ taskName, arm, repeat, args, opencodeVersion, gitHead, stamp, 
 }
 
 const args = parseArgs(process.argv.slice(2))
-const tasks = args.tasks.length ? args.tasks : listTasks()
+let tasks = args.tasks.length ? args.tasks : listTasks()
 const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
+
+/** Recompute the summary from an existing JSONL with no paid runs. Used to add
+ * statistics to records that were already collected, and to verify changes to
+ * the aggregation against real data. Never spawns opencode and never writes to
+ * the input file. */
+const resummarizePath = args.resummarize ? resolve(args.resummarize) : null
+if (resummarizePath) {
+  if (!existsSync(resummarizePath)) throw new Error(`no such records file: ${resummarizePath}`)
+  args.out = resummarizePath
+}
+
 args.out = args.out ? resolve(args.out) : join(benchDir, "results", `${stamp}.jsonl`)
-const pluginSha256 = fileHash(join(repo, "dist", "plugin.js"))
-const auditScriptSha256 = fileHash(join(repo, "scripts", "usage-audit.py"))
+const pluginSha256 = resummarizePath ? null : fileHash(join(repo, "dist", "plugin.js"))
+const auditScriptSha256 = resummarizePath ? null : fileHash(join(repo, "scripts", "usage-audit.py"))
+if (!resummarizePath) {
 mkdirSync(dirname(args.out), { recursive: true })
 writeFileSync(args.out, "")
 writeFileSync(
@@ -373,17 +387,32 @@ writeFileSync(
     2,
   ) + "\n",
 )
+}
 
-const gitHead = shell("git", ["-C", repo, "rev-parse", "HEAD"]).stdout?.trim()
-const opencodeVersion = shell("opencode", ["--version"]).stdout?.trim()
+const gitHead = resummarizePath ? null : shell("git", ["-C", repo, "rev-parse", "HEAD"]).stdout?.trim()
+const opencodeVersion = resummarizePath ? null : shell("opencode", ["--version"]).stdout?.trim()
 
 const { appendFileSync } = await import("node:fs")
 const recordsCache = []
 let spent = 0
 let stopped = false
-const planned = tasks.length * args.arms.length * args.repeats
 
-run: for (let repeat = 1; repeat <= args.repeats; repeat++) {
+if (resummarizePath) {
+  for (const line of readFileSync(resummarizePath, "utf8").split("\n")) {
+    if (line.trim()) recordsCache.push(JSON.parse(line))
+  }
+  // Derive the grid from the records so the summary covers exactly what ran,
+  // not whatever the default task list happens to be today.
+  tasks = [...new Set(recordsCache.map((r) => r.task))].sort()
+  args.arms = [...new Set(recordsCache.map((r) => r.arm))].sort()
+  args.repeats = Math.max(1, ...recordsCache.map((r) => r.repeat ?? 1))
+  spent = recordsCache.reduce((a, r) => a + (r.metrics?.cost_usd ?? 0), 0)
+}
+
+let planned = tasks.length * args.arms.length * args.repeats
+if (resummarizePath) planned = recordsCache.length
+
+run: for (let repeat = 1; resummarizePath ? false : repeat <= args.repeats; repeat++) {
   for (const taskName of tasks) {
     for (const arm of args.arms) {
       if (stopped) break run
@@ -416,20 +445,133 @@ run: for (let repeat = 1; repeat <= args.repeats; repeat++) {
   }
 }
 
-function cellStats(values) {
-  if (values.length === 0) return null
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const mean = values.reduce((a, b) => a + b, 0) / values.length
-  return {
-    mean: +mean.toFixed(6),
-    min: +min.toFixed(6),
-    max: +max.toFixed(6),
-    spread: +(max - min).toFixed(6),
+/** Deterministic RNG so resampling below is reproducible from the same records. */
+function mulberry32(seed) {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }
 
+const mean = (v) => v.reduce((a, b) => a + b, 0) / v.length
+
+function median(values) {
+  const s = [...values].sort((a, b) => a - b)
+  const m = s.length >> 1
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+}
+
+/** Sample standard deviation (n-1). Null below two observations, where spread
+ * is undefined rather than zero. */
+function stdev(values) {
+  if (values.length < 2) return null
+  const m = mean(values)
+  return Math.sqrt(values.reduce((a, b) => a + (b - m) ** 2, 0) / (values.length - 1))
+}
+
+const BOOTSTRAP_RESAMPLES = 2000
+
+/** Percentile bootstrap CI for the mean. Distribution-free, which matters
+ * because tool-call counts are discrete and visibly non-normal. */
+function bootstrapMeanCI(values, rand) {
+  if (values.length < 2) return null
+  const means = []
+  for (let i = 0; i < BOOTSTRAP_RESAMPLES; i++) {
+    let sum = 0
+    for (let j = 0; j < values.length; j++) sum += values[Math.floor(rand() * values.length)]
+    means.push(sum / values.length)
+  }
+  means.sort((a, b) => a - b)
+  const at = (q) => means[Math.min(means.length - 1, Math.floor(q * means.length))]
+  return { lo: +at(0.025).toFixed(6), hi: +at(0.975).toFixed(6) }
+}
+
+function cellStats(values, rand) {
+  if (values.length === 0) return null
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const sd = stdev(values)
+  const ci = rand ? bootstrapMeanCI(values, rand) : null
+  return {
+    n: values.length,
+    mean: +mean(values).toFixed(6),
+    median: +median(values).toFixed(6),
+    sd: sd === null ? null : +sd.toFixed(6),
+    min: +min.toFixed(6),
+    max: +max.toFixed(6),
+    spread: +(max - min).toFixed(6),
+    ci95_lo: ci ? ci.lo : null,
+    ci95_hi: ci ? ci.hi : null,
+  }
+}
+
+const PERMUTATIONS = 10000
+
+/** Two-sided permutation test on the difference of means. Exchangeability under
+ * the null is the only assumption; with n around 20 per arm this is more
+ * defensible than a t-test on discrete, skewed counts. */
+function permutationTest(a, b, rand) {
+  if (a.length < 2 || b.length < 2) return null
+  const observed = mean(b) - mean(a)
+  const pool = [...a, ...b]
+  let extreme = 0
+  for (let i = 0; i < PERMUTATIONS; i++) {
+    const shuffled = [...pool]
+    for (let j = shuffled.length - 1; j > 0; j--) {
+      const k = Math.floor(rand() * (j + 1))
+      ;[shuffled[j], shuffled[k]] = [shuffled[k], shuffled[j]]
+    }
+    const diff = mean(shuffled.slice(a.length)) - mean(shuffled.slice(0, a.length))
+    if (Math.abs(diff) >= Math.abs(observed) - 1e-12) extreme++
+  }
+  // Add-one correction: p is never reported as exactly 0 from finite resampling.
+  return {
+    diff: +observed.toFixed(6),
+    p_value: +((extreme + 1) / (PERMUTATIONS + 1)).toFixed(4),
+    resamples: PERMUTATIONS,
+  }
+}
+
+const CONTRAST_METRICS = {
+  cost_usd: (r) => r.metrics.cost_usd,
+  tool_calls: (r) => r.metrics.tool_calls,
+  effective_fresh: (r) => r.metrics.effective_fresh,
+  wall_ms: (r) => r.wall_ms,
+  context_peak: (r) => r.metrics.context_peak,
+}
+
+/** Per-task treatment-vs-baseline contrast. Only emitted when both arms ran,
+ * and flagged underpowered below five runs per arm so a small batch cannot be
+ * read as a result. */
+function contrasts(records, rand) {
+  const out = []
+  if (!args.arms.includes("baseline") || !args.arms.includes("treatment")) return out
+  for (const task of tasks) {
+    const base = records.filter((r) => r.task === task && r.arm === "baseline")
+    const treat = records.filter((r) => r.task === task && r.arm === "treatment")
+    if (base.length === 0 || treat.length === 0) continue
+    const metrics = {}
+    for (const [name, pick] of Object.entries(CONTRAST_METRICS)) {
+      metrics[name] = permutationTest(base.map(pick), treat.map(pick), rand)
+    }
+    out.push({
+      task,
+      task_class: (base[0] ?? treat[0]).task_class,
+      n_baseline: base.length,
+      n_treatment: treat.length,
+      underpowered: base.length < 5 || treat.length < 5,
+      metrics,
+    })
+  }
+  return out
+}
+
 function summarize(records, totalSpend) {
+  // Fixed seed: the same records always yield the same CIs and p-values.
+  const rand = mulberry32(0x7a5c_0de)
   const cells = []
   for (const task of tasks) {
     for (const arm of args.arms) {
@@ -442,11 +584,11 @@ function summarize(records, totalSpend) {
         runs: rs.length,
         successes: rs.filter((r) => r.success).length,
         timed_out: rs.filter((r) => r.timed_out).length,
-        cost_usd: cellStats(rs.map((r) => r.metrics.cost_usd)),
-        tool_calls: cellStats(rs.map((r) => r.metrics.tool_calls)),
-        effective_fresh: cellStats(rs.map((r) => r.metrics.effective_fresh)),
-        wall_ms: cellStats(rs.map((r) => r.wall_ms)),
-        context_peak: cellStats(rs.map((r) => r.metrics.context_peak)),
+        cost_usd: cellStats(rs.map((r) => r.metrics.cost_usd), rand),
+        tool_calls: cellStats(rs.map((r) => r.metrics.tool_calls), rand),
+        effective_fresh: cellStats(rs.map((r) => r.metrics.effective_fresh), rand),
+        wall_ms: cellStats(rs.map((r) => r.wall_ms), rand),
+        context_peak: cellStats(rs.map((r) => r.metrics.context_peak), rand),
         handoff_notes: rs.reduce((a, r) => a + r.handoff_notes, 0),
       })
     }
@@ -462,7 +604,40 @@ function summarize(records, totalSpend) {
     spend_usd: +totalSpend.toFixed(6),
     max_cost_usd: args.maxCost,
     cells,
+    contrasts: contrasts(records, rand),
   }
+}
+
+function contrastTable(rows) {
+  if (rows.length === 0) return ""
+  const head = ["task", "n(b/t)", "tools.diff", "tools.p", "cost.diff", "cost.p", "eff.diff", "eff.p"]
+  const cell = (t) => (t ? [t.diff, t.p_value] : ["-", "-"])
+  const body = rows.map((r) => {
+    const [td, tp] = cell(r.metrics.tool_calls)
+    const [cd, cp] = cell(r.metrics.cost_usd)
+    const [ed, ep] = cell(r.metrics.effective_fresh)
+    return [
+      r.task + (r.underpowered ? " *" : ""),
+      `${r.n_baseline}/${r.n_treatment}`,
+      typeof td === "number" ? td.toFixed(1) : td,
+      String(tp),
+      typeof cd === "number" ? usd(cd) : cd,
+      String(cp),
+      typeof ed === "number" ? String(Math.round(ed)) : ed,
+      String(ep),
+    ]
+  })
+  const widths = head.map((h, i) => Math.max(h.length, ...body.map((row) => row[i].length)))
+  const line = (row) => row.map((c, i) => c.padEnd(widths[i])).join("  ")
+  const note = rows.some((r) => r.underpowered)
+    ? "\n* underpowered (<5 runs per arm): descriptive only, do not read the p-value as a result."
+    : ""
+  return (
+    "\ntreatment - baseline (permutation test, two-sided):\n" +
+    [line(head), widths.map((w) => "-".repeat(w)).join("  "), ...body.map(line)].join("\n") +
+    note +
+    "\n"
+  )
 }
 
 function summaryTable(cells) {
@@ -477,6 +652,7 @@ function summaryTable(cells) {
     "tools.min..max",
     "eff.mean",
     "wall.mean",
+    "tools.sd",
   ]
   const rows = cells.map((c) => [
     c.task,
@@ -489,6 +665,7 @@ function summaryTable(cells) {
     `${c.tool_calls.min}..${c.tool_calls.max}`,
     String(Math.round(c.effective_fresh.mean)),
     `${(c.wall_ms.mean / 1000).toFixed(1)}s`,
+    c.tool_calls.sd === null ? "-" : c.tool_calls.sd.toFixed(1),
   ])
   const widths = head.map((h, i) => Math.max(h.length, ...rows.map((row) => row[i].length)))
   const line = (cellsRow) => cellsRow.map((c, i) => c.padEnd(widths[i])).join("  ")
@@ -508,5 +685,6 @@ process.stdout.write(
     `spend ${usd(spent)} · runs ${recordsCache.length}/${planned}` +
     `${stopped ? " (stopped early)" : ""}\n\n`,
 )
-process.stdout.write("summary by task/arm:\n" + summaryTable(summary.cells) + "\n\n")
+process.stdout.write("summary by task/arm:\n" + summaryTable(summary.cells) + "\n")
+process.stdout.write(contrastTable(summary.contrasts) + "\n")
 process.stdout.write("individual runs:\n" + table(recordsCache) + "\n")

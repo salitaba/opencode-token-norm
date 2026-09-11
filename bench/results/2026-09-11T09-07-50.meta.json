@@ -1,0 +1,16 @@
+{
+  "model": "opencode-go/deepseek-v4-flash",
+  "arms": [
+    "baseline",
+    "treatment"
+  ],
+  "tasks": [
+    "10-string-sweep"
+  ],
+  "plugin_sha256": "5c6bea59d2c351ee3085ca5846340f3cdef61f790ea8dee603fb652f5bff5592",
+  "audit_script_sha256": "ad5d1c4e18eac2c73dfc7267ff6c8a1f553783d7f62cd9d32d54f25f2ffa0c73",
+  "timeout_s": 300,
+  "max_cost_usd": 0.45,
+  "repeats": 20,
+  "started_at": "2026-09-11T09:07:50.519Z"
+}

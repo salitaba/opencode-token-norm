@@ -1,22 +1,80 @@
 # Benchmark: plain OpenCode vs OpenCode + token-norm
 
-Status: **primary results from the P0 variance study** — 10 tasks x 2 arms x 2
-repeats = 40 paid runs, 2026-09-11, commit `b859a99`, `deepseek-v4-flash`,
-opencode 1.18.30. The study finished **40/40 runs, 0 timeouts**, and cost
-**$0.1783**. Headline: the arms are a dead heat — baseline **$0.0866 / 539 tool
-calls** vs treatment **$0.0918 / 541 tool calls** over 20 runs each, and
-within-cell spread usually exceeds the between-arm difference. The earlier pilots
-(Pilot 1, Pilot 2, and a medium-fixture revalidation, 10 paid runs, 2026-09-10)
-cost **$0.0459** and are kept under [Earlier pilots](#earlier-pilots) as setup
-history; combined benchmark spend to date is **$0.2242**. This is a variance
-measurement of the harness and thresholds, not evidence that the plugin reduces
-cost or tokens.
+Status: **primary results from the power study** — 1 task x 2 arms x 20 repeats
+= 40 paid runs, 2026-09-11, `deepseek-v4-flash`, opencode 1.18.30, **40/40 runs,
+0 timeouts, $0.2711** (see [Power study](#power-study-n20-per-arm-2026-09-11)).
+It is the only run in this document with enough samples per cell to support a
+significance claim, and it **refutes the one candidate hypothesis** the earlier
+N=2 variance study produced. On cost, tool calls, effective fresh tokens, and
+context peak the arms are statistically indistinguishable; the single separation
+is **wall time, +27.4 s per run in the treatment arm (p = 0.018)**.
+
+The earlier P0 variance study (10 tasks x 2 arms x 2 repeats = 40 paid runs,
+commit `b859a99`, **$0.1783**) is kept below as the broader-coverage but
+underpowered survey, and the pilots (10 paid runs, 2026-09-10, **$0.0459**) as
+setup history. Combined benchmark spend to date is **$0.4953**. Nothing here is
+evidence that the plugin reduces cost or tokens.
 
 ## Question
 
 On identical tasks, same model, same repo snapshot, does installing the plugin
 change effective fresh tokens, provider cost, wall time, tool calls, context
 peak, handoff rate, or task success?
+
+## Power study (n=20 per arm, 2026-09-11)
+
+The variance study below ends with one candidate hypothesis: on
+`10-string-sweep`, treatment used 66 tool calls in both repeats against 36/37 for
+baseline. This study re-ran that single cell at **20 repeats per arm** to find out
+whether the gap was real. Raw records: `bench/results/power-string-sweep.jsonl`
+and `power-string-sweep.summary.json`. Caps `--max-cost 0.45 --timeout 300`;
+**40/40 runs succeeded, 0 timed out, spend $0.2711**, cap not reached.
+
+**The hypothesis does not survive.** Treatment used *fewer* calls on average
+(-3.05, p = 0.65), and both arms turn out to be **bimodal** — runs cluster near 35
+calls and near 65 calls in each arm, so the original N=2 pair had simply drawn
+opposite modes from the two arms. This is the failure mode that repeats exist to
+catch, and it is why the cells below are reported with median, standard
+deviation, and a bootstrap CI rather than a mean alone.
+
+Per-arm distribution (n=20 each):
+
+| Arm | Metric | Mean | Median | SD | 95% CI (mean) |
+|---|---|---:|---:|---:|---|
+| baseline | tool calls | 47.25 | 49.5 | 20.44 | 38.40 .. 55.20 |
+| treatment | tool calls | 44.20 | 36.0 | 19.48 | 35.55 .. 52.00 |
+| baseline | cost (USD) | 0.0066 | 0.0065 | 0.0014 | 0.0058 .. 0.0074 |
+| treatment | cost (USD) | 0.0070 | 0.0072 | 0.0016 | 0.0063 .. 0.0077 |
+| baseline | eff. fresh | 27,914 | 25,477 | 14,026 | 23,237 .. 34,614 |
+| treatment | eff. fresh | 28,911 | 27,960 | 6,473 | 26,402 .. 31,829 |
+| baseline | wall (s) | 47.5 | 37.2 | 35.9 | 36.1 .. 66.3 |
+| treatment | wall (s) | 74.9 | 59.2 | 36.6 | 60.9 .. 91.7 |
+
+Treatment minus baseline, two-sided permutation test (10,000 resamples):
+
+| Metric | Difference | p |
+|---|---:|---:|
+| cost_usd | +$0.0004 | 0.51 |
+| tool_calls | -3.05 | 0.65 |
+| effective_fresh | +997 | 0.83 |
+| context_peak | +289 | 0.81 |
+| **wall_ms** | **+27.4 s** | **0.018** |
+
+- **Four of five metrics are indistinguishable.** Cost, tool calls, effective
+  fresh tokens, and context peak all have p > 0.5 — not merely "not significant"
+  but centred close to no effect.
+- **Wall time is the one real separation.** Treatment is ~27 s slower per run
+  (47.5 → 74.9 s, p = 0.018). This is the pilot-1 observation reaching
+  significance for the first time. It is **not** explained by plugin overhead:
+  `bench/latency.mjs` measures the hook at a median 0.004 ms and the audit spawn
+  at ~45 ms, three orders of magnitude too small. Cause is unattributed; the
+  reminder text changing the model's turn structure is a hypothesis, not a
+  finding, and paired per-run latency decomposition is the next step.
+- **Effective-fresh spread is much wider in baseline** (SD 14,026 vs 6,473), so
+  the arms differ in variance even where their means agree.
+- **Scope.** One task, one model, one provider, one machine, single `opencode
+  run` processes, provider-reported cost only. n=20 per arm licenses a claim
+  about *this cell*, not about the plugin in general.
 
 ## Variance study protocol (P0)
 
@@ -90,7 +148,10 @@ Descriptive reading (two repeats per cell, one model/machine — not causal):
   treatment used 66 calls in both repeats vs 36/37 baseline, and announce/audit/
   boundary all fired in both treatment repeats. With N=2 this is a candidate
   hypothesis (the reminder/audit path may change long-sweep behavior), not a
-  finding.
+  finding. **This hypothesis was tested at n=20 per arm and refuted** — the
+  difference reverses to -3.05 calls (p = 0.65) and both arms prove bimodal, so
+  the N=2 pair had drawn opposite modes. See
+  [Power study](#power-study-n20-per-arm-2026-09-11).
 - **Treatment wall time is longer in 17 of 20 paired cells** (e.g. small tasks
   14.4→55.5 s, 15.6→45.1 s) despite near-identical call counts. The direction
   matches pilot 1, but pilot 2's long baseline showed the opposite, so provider

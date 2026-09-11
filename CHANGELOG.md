@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Handoff integration-test matrix: child-session events, a late `session.created`,
   the settle floor, `appendPrompt`/`submitPrompt` failures, and concurrent
   handoffs.
+- Benchmark statistics: per-cell summaries now carry `n`, `median`, `sd`, and a
+  seeded bootstrap 95% CI for the mean, plus a per-task treatment-vs-baseline
+  contrast using a two-sided permutation test. Cells below five runs per arm are
+  flagged `underpowered` so a small batch cannot be read as a result.
+- `bench/run.mjs --resummarize <jsonl>` recomputes a summary from existing run
+  records with no paid runs and without writing to the input file.
+- Power study (`bench/results/power-string-sweep.jsonl`, 40 paid runs, n=20 per
+  arm) refuting the earlier N=2 `10-string-sweep` hypothesis: tool calls differ
+  by -3.05 (p = 0.65) and both arms are bimodal. Wall time is the one metric that
+  separates, +27.4 s in the treatment arm (p = 0.018), cause unattributed.
 
 ### Changed
 
