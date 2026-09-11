@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-12
+
+### Added
+
+- **`token_norm_status` reports `policy.current`, `policy.peak` and
+  `policy.driver`.** `current` is severity at this instant and may fall;
+  `peak` is the session high-water mark and never does; `driver` names the axis
+  (`calls`, `budget`, `context`) behind `current`. Additive: the top-level
+  `state` field remains, now documented as a deprecated alias of `policy.peak`,
+  and `recommendation` is still derived from the peak. The snapshot enforces
+  `peak >= current` itself, so a stale stored level cannot produce an
+  inconsistent payload.
+- **Executable invariants for the policy machine.** Idempotence, `BLOCKED` only
+  under `block` mode with a hard limit exceeded (and always, then),
+  `HANDOFF_RECOMMENDED` only under `handoff` mode with pressure and an armed
+  pause (and always, then), observe/warn measuring identically, state never
+  below the axis max, and at most one rendered block with exactly one header for
+  every subset of due sections — each checked over the whole reachable input
+  space rather than on hand-picked examples.
+
+### Fixed
+
+- **The driver axis at `HEALTHY` is no longer reported as `context`.** The
+  most-specific-first rule matched every axis when nothing was wrong, so a
+  healthy session — including one whose context window could not be resolved at
+  all — named context as its driver. It now attributes to the calls axis, which
+  always exists.
+
+### Documentation
+
+- README leads with the positioning, the checkpoint ladder, and a
+  before/after; adds an enforcement-mode table, a Node/OpenCode/plugin
+  compatibility row, and splits evidence into observed / benchmark / hypothesis
+  (including the retracted wall-time finding: +2.6 s, p = 0.83).
+- `docs/how-it-works.md` documents the status payload field by field, the
+  `current` vs `peak` distinction, weighted vs raw call counts (why
+  `calls 37` and `budget.toolCalls: 52` are both right), the
+  measurement → policy → rendering pipeline, and a call-by-call session
+  walkthrough.
+- Process-local state is stated as an explicit guarantee in the README, and
+  `effective fresh tokens` is called out as cost-weighted input rather than a
+  provider token total.
+
 ## [0.9.0] - 2026-09-12
 
 ### Added
@@ -295,7 +338,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `TokenNormBudget`, which counts tool calls and staples reminders at thresholds, and `TokenNormHandoff`, which collapses the session split into a single tool call.
 
-[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.1...v0.7.2
