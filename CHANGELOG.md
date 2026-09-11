@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Benchmark wall-time claim corrected: harness artifact, not plugin cost.**
+  `docs/benchmark.md` reported the power study's only significant separation as
+  wall time, +27.4 s per run in the treatment arm (p = 0.018). A paired per-run
+  decomposition of all 40 runs (from each record's preserved `run_dir` — the
+  session DB for message/tool timings, the opencode log for phase boundaries)
+  shows the gap is entirely startup, and inside startup it is one window:
+  plugin loading, baseline mean 0.25 s vs treatment 23.22 s. Cause is the
+  harness's per-run `HOME` isolation — only the treatment arm loads a plugin, so
+  only it pays a cold, empty `bun` install cache. Plugin runtime is not
+  involved: importing `dist/plugin.js` costs 0.24 s under bun, the tool hook
+  0.004 ms, the audit spawn ~45 ms. Adjusted for that window the difference is
+  +4.45 s, paired positive in 13 of 20 rather than 17 of 20 — documented as an
+  unattributed residual with **no** significance test. Docs only; the harness
+  fix (seeding a warm bun cache per run) and the re-run are still pending.
 - **README first screen.** The install command moved from line 69 to line 19.
   Badges cut from seven to three (version, test, license), the hand-written
   table of contents dropped in favour of GitHub's own heading outline, the

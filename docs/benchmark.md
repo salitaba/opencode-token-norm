@@ -6,8 +6,14 @@ Status: **primary results from the power study** — 1 task x 2 arms x 20 repeat
 It is the only run in this document with enough samples per cell to support a
 significance claim, and it **refutes the one candidate hypothesis** the earlier
 N=2 variance study produced. On cost, tool calls, effective fresh tokens, and
-context peak the arms are statistically indistinguishable; the single separation
-is **wall time, +27.4 s per run in the treatment arm (p = 0.018)**.
+context peak the arms are statistically indistinguishable. The one apparent
+separation — **wall time, +27.4 s per run in the treatment arm (p = 0.018)** —
+was subsequently traced to a **benchmark harness artifact, not plugin runtime
+cost**: the harness gives every run a fresh `HOME`, so the treatment arm pays a
+cold `bun` install cache the first time it loads a plugin. That one window
+accounts for a mean **+22.97 s** of the 27.4 s. Subtracting it per run leaves an
+**unattributed +4.45 s residual with no significance test** (see
+[Wall time is a harness artifact](#wall-time-is-a-harness-artifact)).
 
 The earlier P0 variance study (10 tasks x 2 arms x 2 repeats = 40 paid runs,
 commit `b859a99`, **$0.1783**) is kept below as the broader-coverage but
@@ -58,23 +64,79 @@ Treatment minus baseline, two-sided permutation test (10,000 resamples):
 | tool_calls | -3.05 | 0.65 |
 | effective_fresh | +997 | 0.83 |
 | context_peak | +289 | 0.81 |
-| **wall_ms** | **+27.4 s** | **0.018** |
+| **wall_ms** (raw) | **+27.4 s** | **0.018** |
+| wall_ms (adjusted, plugin-load window removed) | +4.45 s | not tested |
 
 - **Four of five metrics are indistinguishable.** Cost, tool calls, effective
   fresh tokens, and context peak all have p > 0.5 — not merely "not significant"
   but centred close to no effect.
-- **Wall time is the one real separation.** Treatment is ~27 s slower per run
-  (47.5 → 74.9 s, p = 0.018). This is the pilot-1 observation reaching
-  significance for the first time. It is **not** explained by plugin overhead:
-  `bench/latency.mjs` measures the hook at a median 0.004 ms and the audit spawn
-  at ~45 ms, three orders of magnitude too small. Cause is unattributed; the
-  reminder text changing the model's turn structure is a hypothesis, not a
-  finding, and paired per-run latency decomposition is the next step.
+- **Wall time is the one raw separation, and it is a harness artifact.**
+  Treatment is ~27 s slower per run (47.5 → 74.9 s, p = 0.018). The paired
+  per-run decomposition below attributes essentially all of it to the harness,
+  not the plugin.
 - **Effective-fresh spread is much wider in baseline** (SD 14,026 vs 6,473), so
   the arms differ in variance even where their means agree.
 - **Scope.** One task, one model, one provider, one machine, single `opencode
   run` processes, provider-reported cost only. n=20 per arm licenses a claim
   about *this cell*, not about the plugin in general.
+
+### Wall time is a harness artifact
+
+The +27.4 s gap was decomposed after the fact over all 40 runs of
+`bench/results/power-string-sweep.jsonl`, using each record's preserved
+`run_dir` (`data/opencode/opencode.db` for message and tool timings,
+`data/opencode/log/opencode.log` for phase boundaries). No re-run was needed.
+
+Means, baseline → treatment:
+
+| Component | Baseline | Treatment | Diff |
+|---|---:|---:|---:|
+| wall | 47.5 s | 74.9 s | +27.4 s |
+| startup (before first model call) | 1.9 s | 24.7 s | **+22.8 s** |
+| session (model + tools) | 45.5 s | 50.1 s | +4.6 s |
+| teardown (incl. audit-on-exit) | 0.11 s | 0.11 s | -0.004 s |
+| tool exec total | 1.9 s | 1.3 s | -0.6 s |
+| assistant calls | 7.9 | 6.7 | -1.2 |
+| output tokens | 5,194 | 5,155 | -39 |
+
+The gap is startup, and inside startup it localizes to a single log window: the
+interval between the last config `message=loading` line and the next line
+(`all LSPs are disabled`) — i.e. plugin loading.
+
+| Arm | Mean | Median | Min | Max |
+|---|---:|---:|---:|---:|
+| baseline | 0.25 s | 0.24 s | 0.09 s | 0.50 s |
+| treatment | 23.22 s | 17.23 s | 13.03 s | 69.91 s |
+
+**Cause: per-run `HOME` isolation, not the plugin.** `bench/run.mjs` builds a
+fresh `home/` for every run. Baseline's plugin directory is empty, so opencode
+never invokes `bun`; treatment has the plugin installed, so opencode resolves
+dependencies against a **cold, empty bun install cache** — treatment run dirs
+contain a freshly created `home/.bun/install/cache/`, baseline run dirs have no
+`.bun` at all. Both arms already carry the same `package.json`,
+`package-lock.json`, and 63 MB `node_modules` in the config dir; only the cache
+differs.
+
+Ruled out by direct measurement: transpiling and importing `dist/plugin.js`
+(489 KB) costs 0.24 s under `bun` and 0.08 s under `node`; the tool hook is
+0.004 ms; the audit subprocess spawn is ~45 ms. All three are orders of
+magnitude below 23 s.
+
+**Adjusted effect.** Subtracting each run's plugin-load window:
+
+| | Value |
+|---|---:|
+| raw wall diff | +27.42 s (p = 0.018, as published) |
+| adjusted wall diff | +4.45 s |
+| paired positive | 13 of 20 (raw: 17 of 20) |
+| baseline wall minus load | mean 47.26 s, median 37.09 s |
+| treatment wall minus load | mean 51.72 s, median 39.66 s |
+
+The 4.45 s residual is **unattributed and untested** — no p-value was computed
+for it, and it must not be read as a real plugin cost. Fixing this properly
+means seeding a warm bun cache per run in the harness and re-running the cell;
+until that happens, treat the published wall-time figure as measuring the
+harness.
 
 ## Variance study protocol (P0)
 
@@ -104,7 +166,10 @@ its cap; total spend $0.1783.**
 **What this shows.** Over 40 runs the two arms are effectively indistinguishable
 on cost and tool calls, and run-to-run spread inside most cells is larger than
 the difference between arms. Treatment wall time was longer in 17 of 20 paired
-cells despite near-identical call counts. Reminders fired only where expected,
+cells despite near-identical call counts — but that direction is largely the
+harness's cold bun install cache on plugin load, not the plugin; in the power
+study, removing that window drops the count to 13 of 20 (see
+[Wall time is a harness artifact](#wall-time-is-a-harness-artifact)). Reminders fired only where expected,
 and the behavior instrument found keyword-matched later assistant text after
 every fired signal (announce 11/11, audit 3/3, boundary 5/5; handoff never
 fired). The one cell that separates consistently — `10-string-sweep`, where
@@ -153,9 +218,12 @@ Descriptive reading (two repeats per cell, one model/machine — not causal):
   the N=2 pair had drawn opposite modes. See
   [Power study](#power-study-n20-per-arm-2026-09-11).
 - **Treatment wall time is longer in 17 of 20 paired cells** (e.g. small tasks
-  14.4→55.5 s, 15.6→45.1 s) despite near-identical call counts. The direction
-  matches pilot 1, but pilot 2's long baseline showed the opposite, so provider
-  latency remains a plausible cause.
+  14.4→55.5 s, 15.6→45.1 s) despite near-identical call counts. This is now
+  explained: the harness gives each run a fresh `HOME`, so only the treatment
+  arm pays a cold bun install cache while loading the plugin (mean +22.97 s in
+  the power study). Adjusted for that window the count falls to **13 of 20** and
+  the residual is small and untested. See
+  [Wall time is a harness artifact](#wall-time-is-a-harness-artifact).
 - **Reminders fired only where expected**: announce (25 calls) in treatment runs
   of 03/07/08/09/10 and 04 repeat 2; audit and boundary in both 10 repeats and
   in 09 repeat 2; one 04 repeat finished in 4 tool calls (batch fix via shell)
@@ -414,7 +482,9 @@ arm difference: medium treatment was 12x the baseline gap, long treatment was
 
 - N=2 tasks, one run per arm, one model/provider, one snapshot, one machine.
   Results are descriptive only, not causal; run-to-run variance is unmeasured.
-  The wall-time gap above is a hypothesis, not a finding.
+  The wall-time gap above is a harness artifact — per-run `HOME` isolation makes
+  the treatment arm pay a cold bun install cache on plugin load. See
+  [Wall time is a harness artifact](#wall-time-is-a-harness-artifact).
 - The tasks are small and never crossed the plugin's 25-call announce threshold,
   so the arms differ only by plugin load overhead (and model variance) — by
   construction the treatment had almost nothing to do.
