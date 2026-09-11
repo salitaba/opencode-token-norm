@@ -1,0 +1,9 @@
+{
+  "class": "small",
+  "expected_calls": [
+    5,
+    15
+  ],
+  "modules": 2,
+  "write": "harness-copies-fixture"
+}

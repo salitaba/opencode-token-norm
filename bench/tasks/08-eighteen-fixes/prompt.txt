@@ -1,0 +1,7 @@
+This checkout has 18 independent bugs, one per module under lib/. Work through them module by module:
+
+1. Run `node check.mjs` to list the failing modules.
+2. For each failing module, read lib/fNN.mjs with the read tool and fix its single bug with one targeted edit that leaves the rest of the file unchanged.
+3. After all modules are fixed, run `node check.mjs` again; it must exit 0.
+
+Read README.md for each function's intended contract. Do not modify check.mjs. Do not read or modify modules with shell commands (cat, sed, node -e, heredocs, loops) and do not rewrite whole files: open and edit each module individually so every fix is a separate, reviewable edit.

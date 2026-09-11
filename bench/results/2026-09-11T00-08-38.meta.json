@@ -1,0 +1,22 @@
+{
+  "model": "opencode-go/deepseek-v4-flash",
+  "arms": [
+    "baseline",
+    "treatment"
+  ],
+  "tasks": [
+    "01-fix-bug",
+    "02-multi-bug",
+    "05-string-bug",
+    "06-array-bugs",
+    "03-many-bugs",
+    "07-twelve-fixes",
+    "08-eighteen-fixes"
+  ],
+  "plugin_sha256": "2d2e80034769287473b571cf62ff074d89c10a0cbe88d906a35982cf9f0142e1",
+  "audit_script_sha256": "ad5d1c4e18eac2c73dfc7267ff6c8a1f553783d7f62cd9d32d54f25f2ffa0c73",
+  "timeout_s": 300,
+  "max_cost_usd": 0.17,
+  "repeats": 2,
+  "started_at": "2026-09-11T00:08:38.940Z"
+}

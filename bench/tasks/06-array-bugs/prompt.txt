@@ -1,0 +1,1 @@
+This checkout library has two bugs. `node check.mjs` lists the failing cases. Read README.md for each function's contract, fix the source files under lib/, then run `node check.mjs` until it passes. Do not modify check.mjs.

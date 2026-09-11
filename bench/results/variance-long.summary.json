@@ -1,0 +1,254 @@
+{
+  "model": "opencode-go/deepseek-v4-flash",
+  "repeats": 2,
+  "arms": [
+    "baseline",
+    "treatment"
+  ],
+  "tasks": [
+    "04-long-sweep",
+    "09-numeric-sweep",
+    "10-string-sweep"
+  ],
+  "planned_runs": 12,
+  "completed_runs": 12,
+  "stopped_early": false,
+  "spend_usd": 0.084086,
+  "max_cost_usd": 0.17,
+  "cells": [
+    {
+      "task": "04-long-sweep",
+      "arm": "baseline",
+      "task_class": "long",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.005477,
+        "min": 0.005212,
+        "max": 0.005743,
+        "spread": 0.000531
+      },
+      "tool_calls": {
+        "mean": 35,
+        "min": 35,
+        "max": 35,
+        "spread": 0
+      },
+      "effective_fresh": {
+        "mean": 21935.6,
+        "min": 21898.6,
+        "max": 21972.6,
+        "spread": 74
+      },
+      "wall_ms": {
+        "mean": 57823.5,
+        "min": 33052,
+        "max": 82595,
+        "spread": 49543
+      },
+      "context_peak": {
+        "mean": 18364,
+        "min": 18197,
+        "max": 18531,
+        "spread": 334
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "04-long-sweep",
+      "arm": "treatment",
+      "task_class": "long",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.00409,
+        "min": 0.003125,
+        "max": 0.005055,
+        "spread": 0.00193
+      },
+      "tool_calls": {
+        "mean": 19.5,
+        "min": 4,
+        "max": 35,
+        "spread": 31
+      },
+      "effective_fresh": {
+        "mean": 20051.5,
+        "min": 17472.6,
+        "max": 22630.4,
+        "spread": 5157.8
+      },
+      "wall_ms": {
+        "mean": 91547.5,
+        "min": 46202,
+        "max": 136893,
+        "spread": 90691
+      },
+      "context_peak": {
+        "mean": 15479.5,
+        "min": 14467,
+        "max": 16492,
+        "spread": 2025
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "09-numeric-sweep",
+      "arm": "baseline",
+      "task_class": "long",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.008541,
+        "min": 0.007724,
+        "max": 0.009358,
+        "spread": 0.001634
+      },
+      "tool_calls": {
+        "mean": 65,
+        "min": 64,
+        "max": 66,
+        "spread": 2
+      },
+      "effective_fresh": {
+        "mean": 33246.1,
+        "min": 27931.2,
+        "max": 38561,
+        "spread": 10629.8
+      },
+      "wall_ms": {
+        "mean": 57573,
+        "min": 47426,
+        "max": 67720,
+        "spread": 20294
+      },
+      "context_peak": {
+        "mean": 24638,
+        "min": 24505,
+        "max": 24771,
+        "spread": 266
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "09-numeric-sweep",
+      "arm": "treatment",
+      "task_class": "long",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.008299,
+        "min": 0.006051,
+        "max": 0.010546,
+        "spread": 0.004495
+      },
+      "tool_calls": {
+        "mean": 50,
+        "min": 35,
+        "max": 65,
+        "spread": 30
+      },
+      "effective_fresh": {
+        "mean": 34908.1,
+        "min": 23337.2,
+        "max": 46479,
+        "spread": 23141.8
+      },
+      "wall_ms": {
+        "mean": 95272.5,
+        "min": 89193,
+        "max": 101352,
+        "spread": 12159
+      },
+      "context_peak": {
+        "mean": 22343,
+        "min": 20215,
+        "max": 24471,
+        "spread": 4256
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "10-string-sweep",
+      "arm": "baseline",
+      "task_class": "long",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.006417,
+        "min": 0.00631,
+        "max": 0.006524,
+        "spread": 0.000214
+      },
+      "tool_calls": {
+        "mean": 36.5,
+        "min": 36,
+        "max": 37,
+        "spread": 1
+      },
+      "effective_fresh": {
+        "mean": 25545.4,
+        "min": 24174.8,
+        "max": 26916,
+        "spread": 2741.2
+      },
+      "wall_ms": {
+        "mean": 51048.5,
+        "min": 45588,
+        "max": 56509,
+        "spread": 10921
+      },
+      "context_peak": {
+        "mean": 20725.5,
+        "min": 20102,
+        "max": 21349,
+        "spread": 1247
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "10-string-sweep",
+      "arm": "treatment",
+      "task_class": "long",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.009218,
+        "min": 0.008655,
+        "max": 0.009782,
+        "spread": 0.001127
+      },
+      "tool_calls": {
+        "mean": 66,
+        "min": 66,
+        "max": 66,
+        "spread": 0
+      },
+      "effective_fresh": {
+        "mean": 35695.2,
+        "min": 32801,
+        "max": 38589.4,
+        "spread": 5788.4
+      },
+      "wall_ms": {
+        "mean": 85858,
+        "min": 84682,
+        "max": 87034,
+        "spread": 2352
+      },
+      "context_peak": {
+        "mean": 27733.5,
+        "min": 27587,
+        "max": 27880,
+        "spread": 293
+      },
+      "handoff_notes": 0
+    }
+  ]
+}

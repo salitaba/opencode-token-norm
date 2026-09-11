@@ -1,0 +1,570 @@
+{
+  "model": "opencode-go/deepseek-v4-flash",
+  "repeats": 2,
+  "arms": [
+    "baseline",
+    "treatment"
+  ],
+  "tasks": [
+    "01-fix-bug",
+    "02-multi-bug",
+    "05-string-bug",
+    "06-array-bugs",
+    "03-many-bugs",
+    "07-twelve-fixes",
+    "08-eighteen-fixes"
+  ],
+  "planned_runs": 28,
+  "completed_runs": 28,
+  "stopped_early": false,
+  "spend_usd": 0.094218,
+  "max_cost_usd": 0.17,
+  "cells": [
+    {
+      "task": "01-fix-bug",
+      "arm": "baseline",
+      "task_class": "small",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.00193,
+        "min": 0.001486,
+        "max": 0.002374,
+        "spread": 0.000888
+      },
+      "tool_calls": {
+        "mean": 5,
+        "min": 5,
+        "max": 5,
+        "spread": 0
+      },
+      "effective_fresh": {
+        "mean": 13604.4,
+        "min": 10919.8,
+        "max": 16289,
+        "spread": 5369.2
+      },
+      "wall_ms": {
+        "mean": 14431,
+        "min": 12559,
+        "max": 16303,
+        "spread": 3744
+      },
+      "context_peak": {
+        "mean": 9018,
+        "min": 9008,
+        "max": 9028,
+        "spread": 20
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "01-fix-bug",
+      "arm": "treatment",
+      "task_class": "small",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.002092,
+        "min": 0.001609,
+        "max": 0.002575,
+        "spread": 0.000965
+      },
+      "tool_calls": {
+        "mean": 6,
+        "min": 6,
+        "max": 6,
+        "spread": 0
+      },
+      "effective_fresh": {
+        "mean": 14760,
+        "min": 11716.4,
+        "max": 17803.6,
+        "spread": 6087.2
+      },
+      "wall_ms": {
+        "mean": 55521,
+        "min": 30511,
+        "max": 80531,
+        "spread": 50020
+      },
+      "context_peak": {
+        "mean": 9652,
+        "min": 9587,
+        "max": 9717,
+        "spread": 130
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "02-multi-bug",
+      "arm": "baseline",
+      "task_class": "small",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.002087,
+        "min": 0.001892,
+        "max": 0.002283,
+        "spread": 0.00039
+      },
+      "tool_calls": {
+        "mean": 11,
+        "min": 9,
+        "max": 13,
+        "spread": 4
+      },
+      "effective_fresh": {
+        "mean": 13018.3,
+        "min": 12189.2,
+        "max": 13847.4,
+        "spread": 1658.2
+      },
+      "wall_ms": {
+        "mean": 15569,
+        "min": 15553,
+        "max": 15585,
+        "spread": 32
+      },
+      "context_peak": {
+        "mean": 10431.5,
+        "min": 9988,
+        "max": 10875,
+        "spread": 887
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "02-multi-bug",
+      "arm": "treatment",
+      "task_class": "small",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.002107,
+        "min": 0.002092,
+        "max": 0.002121,
+        "spread": 0.000029
+      },
+      "tool_calls": {
+        "mean": 10,
+        "min": 9,
+        "max": 11,
+        "spread": 2
+      },
+      "effective_fresh": {
+        "mean": 13302.8,
+        "min": 12895.8,
+        "max": 13709.8,
+        "spread": 814
+      },
+      "wall_ms": {
+        "mean": 45094,
+        "min": 39007,
+        "max": 51181,
+        "spread": 12174
+      },
+      "context_peak": {
+        "mean": 10901.5,
+        "min": 10878,
+        "max": 10925,
+        "spread": 47
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "05-string-bug",
+      "arm": "baseline",
+      "task_class": "small",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.001577,
+        "min": 0.00144,
+        "max": 0.001714,
+        "spread": 0.000274
+      },
+      "tool_calls": {
+        "mean": 4,
+        "min": 4,
+        "max": 4,
+        "spread": 0
+      },
+      "effective_fresh": {
+        "mean": 10785.6,
+        "min": 9997.2,
+        "max": 11574,
+        "spread": 1576.8
+      },
+      "wall_ms": {
+        "mean": 16905,
+        "min": 11310,
+        "max": 22500,
+        "spread": 11190
+      },
+      "context_peak": {
+        "mean": 9050.5,
+        "min": 9046,
+        "max": 9055,
+        "spread": 9
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "05-string-bug",
+      "arm": "treatment",
+      "task_class": "small",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.002058,
+        "min": 0.001572,
+        "max": 0.002543,
+        "spread": 0.000972
+      },
+      "tool_calls": {
+        "mean": 4,
+        "min": 4,
+        "max": 4,
+        "spread": 0
+      },
+      "effective_fresh": {
+        "mean": 13829.5,
+        "min": 10832.8,
+        "max": 16826.2,
+        "spread": 5993.4
+      },
+      "wall_ms": {
+        "mean": 29741,
+        "min": 21883,
+        "max": 37599,
+        "spread": 15716
+      },
+      "context_peak": {
+        "mean": 9623,
+        "min": 9617,
+        "max": 9629,
+        "spread": 12
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "06-array-bugs",
+      "arm": "baseline",
+      "task_class": "small",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.002451,
+        "min": 0.002008,
+        "max": 0.002893,
+        "spread": 0.000885
+      },
+      "tool_calls": {
+        "mean": 7.5,
+        "min": 7,
+        "max": 8,
+        "spread": 1
+      },
+      "effective_fresh": {
+        "mean": 15692,
+        "min": 13191,
+        "max": 18193,
+        "spread": 5002
+      },
+      "wall_ms": {
+        "mean": 38662.5,
+        "min": 12546,
+        "max": 64779,
+        "spread": 52233
+      },
+      "context_peak": {
+        "mean": 9845,
+        "min": 9792,
+        "max": 9898,
+        "spread": 106
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "06-array-bugs",
+      "arm": "treatment",
+      "task_class": "small",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.002483,
+        "min": 0.001958,
+        "max": 0.003008,
+        "spread": 0.00105
+      },
+      "tool_calls": {
+        "mean": 9,
+        "min": 8,
+        "max": 10,
+        "spread": 2
+      },
+      "effective_fresh": {
+        "mean": 16471.2,
+        "min": 12901.6,
+        "max": 20040.8,
+        "spread": 7139.2
+      },
+      "wall_ms": {
+        "mean": 32080.5,
+        "min": 29201,
+        "max": 34960,
+        "spread": 5759
+      },
+      "context_peak": {
+        "mean": 10611.5,
+        "min": 10499,
+        "max": 10724,
+        "spread": 225
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "03-many-bugs",
+      "arm": "baseline",
+      "task_class": "medium",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.0048,
+        "min": 0.004506,
+        "max": 0.005094,
+        "spread": 0.000588
+      },
+      "tool_calls": {
+        "mean": 35,
+        "min": 35,
+        "max": 35,
+        "spread": 0
+      },
+      "effective_fresh": {
+        "mean": 18979.1,
+        "min": 18861.2,
+        "max": 19097,
+        "spread": 235.8
+      },
+      "wall_ms": {
+        "mean": 150972,
+        "min": 93110,
+        "max": 208834,
+        "spread": 115724
+      },
+      "context_peak": {
+        "mean": 15370.5,
+        "min": 14947,
+        "max": 15794,
+        "spread": 847
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "03-many-bugs",
+      "arm": "treatment",
+      "task_class": "medium",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.005032,
+        "min": 0.005007,
+        "max": 0.005056,
+        "spread": 0.000049
+      },
+      "tool_calls": {
+        "mean": 36.5,
+        "min": 36,
+        "max": 37,
+        "spread": 1
+      },
+      "effective_fresh": {
+        "mean": 21559.9,
+        "min": 21044.8,
+        "max": 22075,
+        "spread": 1030.2
+      },
+      "wall_ms": {
+        "mean": 59316.5,
+        "min": 54417,
+        "max": 64216,
+        "spread": 9799
+      },
+      "context_peak": {
+        "mean": 17683.5,
+        "min": 17503,
+        "max": 17864,
+        "spread": 361
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "07-twelve-fixes",
+      "arm": "baseline",
+      "task_class": "medium",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.00469,
+        "min": 0.004134,
+        "max": 0.005246,
+        "spread": 0.001112
+      },
+      "tool_calls": {
+        "mean": 29,
+        "min": 28,
+        "max": 30,
+        "spread": 2
+      },
+      "effective_fresh": {
+        "mean": 19217.4,
+        "min": 18349.2,
+        "max": 20085.6,
+        "spread": 1736.4
+      },
+      "wall_ms": {
+        "mean": 71697.5,
+        "min": 62611,
+        "max": 80784,
+        "spread": 18173
+      },
+      "context_peak": {
+        "mean": 15821,
+        "min": 14358,
+        "max": 17284,
+        "spread": 2926
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "07-twelve-fixes",
+      "arm": "treatment",
+      "task_class": "medium",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.004648,
+        "min": 0.004589,
+        "max": 0.004707,
+        "spread": 0.000117
+      },
+      "tool_calls": {
+        "mean": 29,
+        "min": 29,
+        "max": 29,
+        "spread": 0
+      },
+      "effective_fresh": {
+        "mean": 19438,
+        "min": 19067.6,
+        "max": 19808.4,
+        "spread": 740.8
+      },
+      "wall_ms": {
+        "mean": 54694,
+        "min": 47166,
+        "max": 62222,
+        "spread": 15056
+      },
+      "context_peak": {
+        "mean": 16523,
+        "min": 16517,
+        "max": 16529,
+        "spread": 12
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "08-eighteen-fixes",
+      "arm": "baseline",
+      "task_class": "medium",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.005305,
+        "min": 0.005278,
+        "max": 0.005333,
+        "spread": 0.000055
+      },
+      "tool_calls": {
+        "mean": 41.5,
+        "min": 41,
+        "max": 42,
+        "spread": 1
+      },
+      "effective_fresh": {
+        "mean": 21263.1,
+        "min": 21076.2,
+        "max": 21450,
+        "spread": 373.8
+      },
+      "wall_ms": {
+        "mean": 43878.5,
+        "min": 41674,
+        "max": 46083,
+        "spread": 4409
+      },
+      "context_peak": {
+        "mean": 17839.5,
+        "min": 17779,
+        "max": 17900,
+        "spread": 121
+      },
+      "handoff_notes": 0
+    },
+    {
+      "task": "08-eighteen-fixes",
+      "arm": "treatment",
+      "task_class": "medium",
+      "runs": 2,
+      "successes": 2,
+      "timed_out": 0,
+      "cost_usd": {
+        "mean": 0.005848,
+        "min": 0.005421,
+        "max": 0.006275,
+        "spread": 0.000854
+      },
+      "tool_calls": {
+        "mean": 40.5,
+        "min": 40,
+        "max": 41,
+        "spread": 1
+      },
+      "effective_fresh": {
+        "mean": 24334.4,
+        "min": 21930.2,
+        "max": 26738.6,
+        "spread": 4808.4
+      },
+      "wall_ms": {
+        "mean": 64871.5,
+        "min": 52112,
+        "max": 77631,
+        "spread": 25519
+      },
+      "context_peak": {
+        "mean": 18514.5,
+        "min": 18269,
+        "max": 18760,
+        "spread": 491
+      },
+      "handoff_notes": 0
+    }
+  ]
+}

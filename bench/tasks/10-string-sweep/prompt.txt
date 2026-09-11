@@ -1,0 +1,1 @@
+This checkout has 30 independent bugs, one per module under lib/. Run `node check.mjs`; every FAIL line names the module and function. Read README.md for the intended contract of each function, fix the source modules, and run `node check.mjs` until it exits 0. Do not modify check.mjs.

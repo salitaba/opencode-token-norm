@@ -1,0 +1,9 @@
+{
+  "class": "long",
+  "expected_calls": [
+    60,
+    150
+  ],
+  "modules": 30,
+  "write": "harness-copies-fixture"
+}

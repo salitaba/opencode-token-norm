@@ -36,6 +36,7 @@ function parseArgs(argv) {
     model: "opencode-go/deepseek-v4-flash",
     timeout: 240,
     maxCost: 1.0,
+    repeats: 1,
     out: null,
   }
   for (let i = 0; i < argv.length; i++) {
@@ -46,6 +47,7 @@ function parseArgs(argv) {
     else if (a === "--model") args.model = argv[++i]
     else if (a === "--timeout") args.timeout = Number(argv[++i])
     else if (a === "--max-cost") args.maxCost = Number(argv[++i])
+    else if (a === "--repeats") args.repeats = Math.max(1, Math.floor(Number(argv[++i])) || 1)
     else if (a === "--out") args.out = argv[++i]
     else throw new Error(`unknown arg ${a}`)
   }
@@ -258,7 +260,7 @@ function treeHash(root) {
   return hash.digest("hex")
 }
 
-function runOne({ taskName, arm, args, opencodeVersion, gitHead, stamp, spent }) {
+function runOne({ taskName, arm, repeat, args, opencodeVersion, gitHead, stamp, spent }) {
   const taskDir = join(benchDir, "tasks", taskName)
   const prompt = readFileSync(join(taskDir, "prompt.txt"), "utf8").trim()
   const metaPath = join(taskDir, "meta.json")
@@ -267,7 +269,7 @@ function runOne({ taskName, arm, args, opencodeVersion, gitHead, stamp, spent })
   const pluginSha256 = fileHash(join(repo, "dist", "plugin.js"))
   const auditScriptSha256 = fileHash(join(repo, "scripts", "usage-audit.py"))
 
-  const runId = `${stamp}-${arm}-${taskName}`
+  const runId = `${stamp}-${arm}-${taskName}${args.repeats > 1 ? `-r${repeat}` : ""}`
   const root = join(runsRoot, runId)
   const home = join(root, "home")
   const config = join(root, "config")
@@ -317,6 +319,8 @@ function runOne({ taskName, arm, args, opencodeVersion, gitHead, stamp, spent })
     started_at: started,
     arm,
     task: taskName,
+    repeat,
+    repeats: args.repeats,
     task_class: meta.class ?? null,
     expected_calls: meta.expected_calls ?? null,
     model: args.model,
@@ -362,6 +366,7 @@ writeFileSync(
       audit_script_sha256: auditScriptSha256,
       timeout_s: args.timeout,
       max_cost_usd: args.maxCost,
+      repeats: args.repeats,
       started_at: new Date().toISOString(),
     },
     null,
@@ -376,31 +381,132 @@ const { appendFileSync } = await import("node:fs")
 const recordsCache = []
 let spent = 0
 let stopped = false
-for (const taskName of tasks) {
-  for (const arm of args.arms) {
-    if (stopped) break
-    const record = runOne({ taskName, arm, args, opencodeVersion, gitHead, stamp, spent })
-    recordsCache.push(record)
-    appendFileSync(args.out, JSON.stringify(record) + "\n")
-    spent += record.metrics.cost_usd
-    process.stderr.write(
-      `[${recordsCache.length}] ${arm}/${taskName} ok=${record.success} ` +
-        `eff=${Math.round(record.metrics.effective_fresh)} cost=${usd(record.metrics.cost_usd)} ` +
-        `wall=${(record.wall_ms / 1000).toFixed(1)}s tools=${record.metrics.tool_calls}\n`,
-    )
-    if (spent > args.maxCost) {
-      stopped = true
+const planned = tasks.length * args.arms.length * args.repeats
+
+run: for (let repeat = 1; repeat <= args.repeats; repeat++) {
+  for (const taskName of tasks) {
+    for (const arm of args.arms) {
+      if (stopped) break run
+      const record = runOne({
+        taskName,
+        arm,
+        repeat,
+        args,
+        opencodeVersion,
+        gitHead,
+        stamp,
+        spent,
+      })
+      recordsCache.push(record)
+      appendFileSync(args.out, JSON.stringify(record) + "\n")
+      spent += record.metrics.cost_usd
       process.stderr.write(
-        `STOP: provider-reported spend ${usd(spent)} exceeded cap ${usd(args.maxCost)}; ` +
-          `remaining runs skipped\n`,
+        `[${recordsCache.length}/${planned}] r${repeat} ${arm}/${taskName} ok=${record.success} ` +
+          `eff=${Math.round(record.metrics.effective_fresh)} cost=${usd(record.metrics.cost_usd)} ` +
+          `wall=${(record.wall_ms / 1000).toFixed(1)}s tools=${record.metrics.tool_calls}\n`,
       )
+      if (spent > args.maxCost) {
+        stopped = true
+        process.stderr.write(
+          `STOP: provider-reported spend ${usd(spent)} exceeded cap ${usd(args.maxCost)}; ` +
+            `remaining runs skipped\n`,
+        )
+      }
     }
   }
 }
 
+function cellStats(values) {
+  if (values.length === 0) return null
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const mean = values.reduce((a, b) => a + b, 0) / values.length
+  return {
+    mean: +mean.toFixed(6),
+    min: +min.toFixed(6),
+    max: +max.toFixed(6),
+    spread: +(max - min).toFixed(6),
+  }
+}
+
+function summarize(records, totalSpend) {
+  const cells = []
+  for (const task of tasks) {
+    for (const arm of args.arms) {
+      const rs = records.filter((r) => r.task === task && r.arm === arm)
+      if (rs.length === 0) continue
+      cells.push({
+        task,
+        arm,
+        task_class: rs[0].task_class,
+        runs: rs.length,
+        successes: rs.filter((r) => r.success).length,
+        timed_out: rs.filter((r) => r.timed_out).length,
+        cost_usd: cellStats(rs.map((r) => r.metrics.cost_usd)),
+        tool_calls: cellStats(rs.map((r) => r.metrics.tool_calls)),
+        effective_fresh: cellStats(rs.map((r) => r.metrics.effective_fresh)),
+        wall_ms: cellStats(rs.map((r) => r.wall_ms)),
+        context_peak: cellStats(rs.map((r) => r.metrics.context_peak)),
+        handoff_notes: rs.reduce((a, r) => a + r.handoff_notes, 0),
+      })
+    }
+  }
+  return {
+    model: args.model,
+    repeats: args.repeats,
+    arms: args.arms,
+    tasks,
+    planned_runs: planned,
+    completed_runs: records.length,
+    stopped_early: stopped,
+    spend_usd: +totalSpend.toFixed(6),
+    max_cost_usd: args.maxCost,
+    cells,
+  }
+}
+
+function summaryTable(cells) {
+  const head = [
+    "task",
+    "arm",
+    "runs",
+    "ok",
+    "cost.mean",
+    "cost.min..max",
+    "tools.mean",
+    "tools.min..max",
+    "eff.mean",
+    "wall.mean",
+  ]
+  const rows = cells.map((c) => [
+    c.task,
+    c.arm,
+    String(c.runs),
+    String(c.successes),
+    usd(c.cost_usd.mean),
+    `${usd(c.cost_usd.min)}..${usd(c.cost_usd.max)}`,
+    c.tool_calls.mean.toFixed(1),
+    `${c.tool_calls.min}..${c.tool_calls.max}`,
+    String(Math.round(c.effective_fresh.mean)),
+    `${(c.wall_ms.mean / 1000).toFixed(1)}s`,
+  ])
+  const widths = head.map((h, i) => Math.max(h.length, ...rows.map((row) => row[i].length)))
+  const line = (cellsRow) => cellsRow.map((c, i) => c.padEnd(widths[i])).join("  ")
+  return [line(head), widths.map((w) => "-".repeat(w)).join("  "), ...rows.map(line)].join("\n")
+}
+
+const summary = summarize(recordsCache, spent)
+const summaryPath = args.out.endsWith(".jsonl")
+  ? args.out.slice(0, -".jsonl".length) + ".summary.json"
+  : args.out + ".summary.json"
+writeFileSync(summaryPath, JSON.stringify(summary, null, 2) + "\n")
+
 process.stdout.write(`\nresults: ${args.out}\n`)
+process.stdout.write(`summary: ${summaryPath}\n`)
 process.stdout.write(
   `commit ${gitHead} · opencode ${opencodeVersion} · model ${args.model} · ` +
-    `spend ${usd(spent)}\n\n`,
+    `spend ${usd(spent)} · runs ${recordsCache.length}/${planned}` +
+    `${stopped ? " (stopped early)" : ""}\n\n`,
 )
-process.stdout.write(table(recordsCache) + "\n")
+process.stdout.write("summary by task/arm:\n" + summaryTable(summary.cells) + "\n\n")
+process.stdout.write("individual runs:\n" + table(recordsCache) + "\n")
