@@ -1,67 +1,17 @@
 # opencode-token-norm
 
 [![npm version](https://img.shields.io/npm/v/opencode-token-norm)](https://www.npmjs.com/package/opencode-token-norm)
-[![npm downloads](https://img.shields.io/npm/dm/opencode-token-norm)](https://www.npmjs.com/package/opencode-token-norm)
-[![license](https://img.shields.io/npm/l/opencode-token-norm)](https://github.com/salitaba/opencode-token-norm/blob/main/LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/salitaba/opencode-token-norm?style=social)](https://github.com/salitaba/opencode-token-norm)
-[![GitHub release](https://img.shields.io/github/v/release/salitaba/opencode-token-norm)](https://github.com/salitaba/opencode-token-norm/releases/latest)
-[![release workflow](https://github.com/salitaba/opencode-token-norm/actions/workflows/release.yml/badge.svg)](https://github.com/salitaba/opencode-token-norm/actions/workflows/release.yml)
 [![test](https://github.com/salitaba/opencode-token-norm/actions/workflows/test.yml/badge.svg)](https://github.com/salitaba/opencode-token-norm/actions/workflows/test.yml)
+[![license](https://img.shields.io/npm/l/opencode-token-norm)](https://github.com/salitaba/opencode-token-norm/blob/main/LICENSE)
 
 **Your token rules are advice. This makes them mechanical.**
 
 ![token-norm demo: the agent gets counted, audited, and handed off](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.gif)
 
-*Demo (18s at 2x): the plugin counts calls and staples the audit onto tool output, then the agent calls `handoff` and lands in a fresh session with the note pre-filled. [Full-speed MP4](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.mp4).*
-
-**Observed on real sessions:** 74 `handoff` calls; **90%** ended the old session
-within 5 minutes. ([how that was measured](https://github.com/salitaba/opencode-token-norm/blob/main/docs/evaluation.md))
-
 An [OpenCode](https://opencode.ai) plugin that counts budgeted tool calls,
 staples reminders onto the output it is already reading, runs the token audit on
 its behalf, and collapses the session split into one tool call.
-
-## Contents
-
-- [What it does](#what-it-does)
-- [Install](#install)
-- [Why add Token Norm?](#why-add-token-norm)
-- [How it works](#how-it-works)
-- [Observed behavior](#observed-behavior)
-- [Configuration](#configuration)
-- [Run the audit yourself](#run-the-audit-yourself)
-- [Further reading](#further-reading)
-- [License](#license)
-
-## What it does
-
-- **Counts budgeted tool calls and marks task boundaries.** Past `BOUNDARY_AT` calls
-  (default 40), a new user message revokes any stale "do everything" override —
-  the failure no dashboard can see.
-- **Demands the cost statement at 25 calls**, once per session, at the first
-  moment the task is provably big.
-- **Runs the usage audit itself every 60 calls** and staples the numbers to tool
-  output, so auditing is a fact to report rather than a step to defer.
-- **Ships a `handoff` tool** that persists a structured note, opens a fresh
-  session, and pre-fills the prompt in one call.
-
-The default enforcement is behavioral: it puts the rule directly in the agent's
-execution path; opt-in `block` mode adds mechanical refusal. Every threshold is
-logged, configurable, and independently disableable.
-
-**Before / after:**
-
-```text
-Without Token Norm
-  Task A ─────────────────────────────┐
-  Task B ─────────────────────────────┘   one context, and B inherits
-                                          A's stale "do everything"
-
-With Token Norm
-  Task A ──→ boundary @40 ──→ audit @60 ──→ handoff ──→ Task B
-             stale override    numbers      note         fresh context,
-             revoked           in-band      written      pre-filled
-```
+*([full-speed demo MP4](https://raw.githubusercontent.com/salitaba/opencode-token-norm/main/docs/assets/token-norm-demo.mp4))*
 
 ## Install
 
@@ -76,6 +26,21 @@ Requires Node ≥ 22 and an OpenCode build with plugin support; `python3` is
 optional, used for the audit checkpoint only. Requirements, verification, and
 troubleshooting are in the
 [install notes](https://github.com/salitaba/opencode-token-norm/blob/main/docs/install.md).
+
+## What it does
+
+- **Counts budgeted tool calls and marks task boundaries.** Past `BOUNDARY_AT`
+  calls (default 40), a new user message revokes any stale "do everything"
+  override.
+- **Demands the cost statement at 25 calls**, once per session.
+- **Runs the usage audit itself every 60 calls** and staples the numbers to tool
+  output.
+- **Ships a `handoff` tool** that persists a structured note, opens a fresh
+  session, and pre-fills the prompt in one call.
+
+The default enforcement is behavioral: it puts the rule directly in the agent's
+execution path; opt-in `block` mode adds mechanical refusal. Every threshold is
+logged, configurable, and independently disableable.
 
 ## Why add Token Norm?
 

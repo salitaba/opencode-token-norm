@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **README first screen.** The install command moved from line 69 to line 19.
+  Badges cut from seven to three (version, test, license), the hand-written
+  table of contents dropped in favour of GitHub's own heading outline, the
+  duplicated handoff statistic removed (the same numbers are in
+  `## Observed behavior`), the demo caption folded into the intro paragraph, and
+  the before/after diagram relocated to `docs/how-it-works.md`, next to the
+  architecture diagram it belongs with. No content was lost, only moved or
+  de-duplicated.
 - **Unified policy state machine.** Severity is now computed once, in
   `src/budget/policy.ts`, as a monotone state machine
   (`HEALTHY` < `ATTENTION` < `PRESSURE` < `HANDOFF_RECOMMENDED` < `BLOCKED`)

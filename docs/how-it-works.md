@@ -4,6 +4,22 @@
 thresholds are where they are, and why the metric is shaped the way it is —
 lives in the [design notes](design.md).*
 
+**Before / after:**
+
+```text
+Without Token Norm
+  Task A ─────────────────────────────┐
+  Task B ─────────────────────────────┘   one context, and B inherits
+                                          A's stale "do everything"
+
+With Token Norm
+  Task A ──→ boundary @40 ──→ audit @60 ──→ handoff ──→ Task B
+             stale override    numbers      note         fresh context,
+             revoked           in-band      written      pre-filled
+```
+
+**The two halves:**
+
 ```text
                    OpenCode
                       │
