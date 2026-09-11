@@ -9,7 +9,7 @@ A=node_modules/opencode-token-norm/scripts/usage-audit.py
 
 python3 $A --last                  # most recently updated session
 python3 $A --session <session-id>  # one specific session (what the plugin runs)
-python3 $A --top 5                 # rank the 5 most recent by effective tokens
+python3 $A --top 5                 # rank the 5 most recent by effective fresh tokens (a weighted input metric)
 python3 $A --receipt               # shareable snapshot, most recent session
 python3 $A --receipt <session-id>  # ...or a named one
 ```

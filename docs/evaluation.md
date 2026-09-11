@@ -94,13 +94,15 @@ session and reports, per signal:
 | `task-boundary` | Does it propose a split/handoff or acknowledge the boundary (new files/subsystems, continuation)? |
 | `handoff written to` | Did the old session stop — no part after the note within the grace window (default 5 minutes)? |
 
-Each event emits `fired` (log line present) and `followed` (matching assistant
-text found) or `stopped` (handoff), plus the matched message id, `delta_ms`, and
-a short evidence snippet. Matching scans assistant `text` and `reasoning` parts
-only, so reminder text appended to tool output cannot be mistaken for a
-response. An audit event's search window ends at the next audit, so a later
-checkpoint is never credited to an earlier one. When the log or DB is missing,
-the affected signal is `null`, not `false`.
+Each signal reports `fired` (at least one log event of that kind) plus, per
+event, `followed` (matching assistant text found) or `stopped` (handoff), with
+the matched message id, `delta_ms`, and a short evidence snippet. Matching scans
+assistant `text` and `reasoning` parts only, so reminder text appended to tool
+output cannot be mistaken for a response. An audit event's search window ends at
+the next audit, so a later checkpoint is never credited to an earlier one. When
+the log is missing, `fired` falls back to the run record's log counts (with no
+event timestamps); when the DB has no readable parts, `followed` and `stopped`
+are `null`, not `false`.
 
 ```
 node bench/behavior/analyze.mjs bench/results/<stamp>.jsonl \
@@ -110,6 +112,21 @@ node bench/behavior/analyze.mjs bench/results/<stamp>.jsonl \
 The self-test (`node --test bench/behavior/analyze.test.mjs`) drives synthetic
 events where each signal is present and absent, so the analyzer is verifiable
 without provider spend.
+
+### Terminology
+
+- **fired** — the plugin emitted a signal log line (`announce-threshold`,
+  `audit-threshold`, `task-boundary`, `handoff written to`), observable in the
+  run's `token-norm.log`. If that log is missing, the analyzer falls back to the
+  run record's counts, so `fired` can mean "the signal ran", not "the line was read".
+- **followed** — `bench/behavior/analyze.mjs` matched a keyword regex in a later
+  assistant `text`/`reasoning` part in the same session, after the event and before
+  the next event of that signal. It is evidence of uptake intent only — not proof of
+  understanding, compliance, or causation.
+- **complied** — the assistant actually obeyed the instruction. No current tool
+  measures this; this document never reports it.
+- **successful** — the task evaluator exited 0 (`success: ev.status === 0` in
+  `bench/run.mjs`). It describes task outcome, independent of any reminder.
 
 ### Status
 
@@ -126,3 +143,12 @@ the shape of the open question, not an answer. A `followed: true` means
 keyword-matched assistant text appeared after a reminder; it does not establish
 that the reminder caused it. No control arm has been run under this instrument,
 so this section supports no causal claim.
+
+The P0 variance study (2026-09-11, 40 runs;
+`bench/results/variance-small-medium.jsonl` and `variance-long.jsonl`) was
+analyzed the same way. Across its 20 treatment runs, every run in which a signal
+fired also had keyword-matched later assistant text: announce 11/11, audit 3/3,
+boundary 5/5; handoff never fired. Baseline runs emit no plugin log, so they
+cannot produce `followed` either way. That is still the instrument's correlation
+signal only, with two repeats per cell — not evidence of compliance and not a
+causal claim.

@@ -6,9 +6,11 @@ Status: **methodology plus two completed pilots and one fixture revalidation**
 announce threshold. Pilot 2 (1 medium + 1 long task x 2 arms, commit `38549cd`)
 cost **$0.0289** and triggered all three reminders in the long treatment arm.
 The medium fixture was then revised and revalidated for **$0.0099**
-(`2026-09-10T23-54-25`). Total pilot spend **$0.0459**. This is a smoke test of
-the harness and thresholds, not a study. Do not cite it as evidence that the
-plugin reduces cost or tokens.
+(`2026-09-10T23-54-25`). Total pilot spend **$0.0459**. The P0 variance study
+(10 tasks x 2 arms x 2 repeats, 2026-09-11, commit `b859a99`) then added 40 paid
+runs for **$0.1783**; results below. This is a smoke test of the harness and
+thresholds, not a study. Do not cite it as evidence that the plugin reduces cost
+or tokens.
 
 ## Question
 
@@ -218,3 +220,123 @@ cost statement after that announce in this run. N=1 per arm.
   are Anthropic-like proxies, not this provider's actual billing.
 - Provider-reported `cost` is authoritative for spend; treat everything else as
   proxy.
+
+## Task catalog (2026-09-11)
+
+`bench/tasks/` holds ten fixture tasks. The six added for the P0 variance study
+(05–10) are generated and validated offline: `node check.mjs` exits non-zero on
+the unsolved fixture and exits 0 against a reference-fixed copy, so a fixture
+can be validated without paid runs. Each task has `prompt.txt`, `meta.json`,
+`eval.mjs`, and `fixture/`; evaluators import the workspace modules directly.
+
+| Task | Class | Modules | Cases | Expected calls | Notes |
+|---|---|---:|---:|---|---|
+| 01-fix-bug | small | 1 | 5 | 5–15 | single arithmetic bug |
+| 02-multi-bug | small | 3 | 6 | 5–15 | checkout helpers |
+| 03-many-bugs | medium | 16 | 39 | 30–40 | per-module read+edit required |
+| 04-long-sweep | long | 30 | 67 | 60–150 | crosses announce + audit |
+| 05-string-bug | small | 1 | 6 | 5–15 | slugify / truncate |
+| 06-array-bugs | small | 2 | 6 | 5–15 | median / rotate |
+| 07-twelve-fixes | medium | 12 | 26 | 25–40 | per-module read+edit required |
+| 08-eighteen-fixes | medium | 18 | 36 | 35–55 | per-module read+edit required |
+| 09-numeric-sweep | long | 30 | 67 | 60–150 | numeric one-liners |
+| 10-string-sweep | long | 30 | 64 | 60–150 | string one-liners |
+
+## Batch / repeats mode
+
+`bench/run.mjs` stays single-task by default; `--repeats N` turns it into a
+batch that runs N repeats x both arms x the task list (`--all` or repeated
+`--task`). One JSONL record per run keeps every existing field and adds
+`repeat` and `repeats`; the run id gets an `-rN` suffix when N > 1. An aggregate
+`.summary.json` is written next to the JSONL with per task/arm cells: runs,
+successes, timed-out count, and mean/min/max/spread for cost, tool calls,
+effective fresh tokens, wall time, and context peak.
+
+```bash
+node bench/run.mjs --all --repeats 2 --model opencode-go/deepseek-v4-flash \
+  --timeout 300 --max-cost 0.40 --out bench/results/variance.jsonl
+```
+
+The `--max-cost` guard applies to the whole batch (provider-reported spend,
+checked after each run); when it trips the remaining runs are skipped, the
+partial summary is still written, and `stopped_early` is set.
+
+## Variance study protocol (P0)
+
+- 10 tasks x 2 arms x 2 repeats = 40 runs, `deepseek-v4-flash`, `--timeout 300`.
+- Cheapest classes first (small, then medium, then long) so a cap stop still
+  leaves usable small/medium cells.
+- Isolation as in the pilots: per-run `HOME`/`XDG_*`/workspace under
+  `/tmp/opencode/tn-bench-runs/`, fixtures copied fresh per run.
+- Artifact identity pinned per run via `plugin_sha256` and
+  `audit_script_sha256`.
+- Hard cost cap **$0.40** across all paid runs, enforced per invocation below
+  that.
+- Cells are reported as mean and spread only; two repeats cannot support a
+  significance claim, so the study is descriptive and the raw JSONL is the
+  evidence.
+
+## Variance study results (2026-09-11)
+
+Run 2026-09-11 ~03:30–05:10 UTC from commit `b859a99` (plugin and audit script
+SHAs pinned in every record). Raw records:
+`bench/results/variance-small-medium.jsonl` (28 runs, `$0.0942`) and
+`bench/results/variance-long.jsonl` (12 runs, `$0.0841`), with matching
+`.summary.json` files. Caps: `--max-cost 0.17` per invocation, `--timeout 300`.
+**40/40 runs succeeded, 0 timed out, 0 fixtures modified, and neither batch hit
+its cap; total spend $0.1783.**
+
+Mean values per cell (N=2 each; `tools` is mean with min..max):
+
+| Task | Class | Arm | Cost | Tools | Eff. fresh | Wall |
+|---|---|---|---:|---:|---:|---:|
+| 01-fix-bug | small | baseline | $0.0019 | 5.0 (5..5) | 13,604 | 14.4 s |
+| 01-fix-bug | small | treatment | $0.0021 | 6.0 (6..6) | 14,760 | 55.5 s |
+| 02-multi-bug | small | baseline | $0.0021 | 11.0 (9..13) | 13,018 | 15.6 s |
+| 02-multi-bug | small | treatment | $0.0021 | 10.0 (9..11) | 13,303 | 45.1 s |
+| 05-string-bug | small | baseline | $0.0016 | 4.0 (4..4) | 10,786 | 16.9 s |
+| 05-string-bug | small | treatment | $0.0021 | 4.0 (4..4) | 13,830 | 29.7 s |
+| 06-array-bugs | small | baseline | $0.0025 | 7.5 (7..8) | 15,692 | 38.7 s |
+| 06-array-bugs | small | treatment | $0.0025 | 9.0 (8..10) | 16,471 | 32.1 s |
+| 03-many-bugs | medium | baseline | $0.0048 | 35.0 (35..35) | 18,979 | 151.0 s |
+| 03-many-bugs | medium | treatment | $0.0050 | 36.5 (36..37) | 21,560 | 59.3 s |
+| 07-twelve-fixes | medium | baseline | $0.0047 | 29.0 (28..30) | 19,217 | 71.7 s |
+| 07-twelve-fixes | medium | treatment | $0.0046 | 29.0 (29..29) | 19,438 | 54.7 s |
+| 08-eighteen-fixes | medium | baseline | $0.0053 | 41.5 (41..42) | 21,263 | 43.9 s |
+| 08-eighteen-fixes | medium | treatment | $0.0058 | 40.5 (40..41) | 24,334 | 64.9 s |
+| 04-long-sweep | long | baseline | $0.0055 | 35.0 (35..35) | 21,936 | 57.8 s |
+| 04-long-sweep | long | treatment | $0.0041 | 19.5 (4..35) | 20,052 | 91.5 s |
+| 09-numeric-sweep | long | baseline | $0.0085 | 65.0 (64..66) | 33,246 | 57.6 s |
+| 09-numeric-sweep | long | treatment | $0.0083 | 50.0 (35..65) | 34,908 | 95.3 s |
+| 10-string-sweep | long | baseline | $0.0064 | 36.5 (36..37) | 25,545 | 51.0 s |
+| 10-string-sweep | long | treatment | $0.0092 | 66.0 (66..66) | 35,695 | 85.9 s |
+
+Descriptive reading (two repeats per cell, one model/machine — not causal):
+
+- **Arm totals are a dead heat.** Baseline: $0.0866 and 539 tool calls over 20
+  runs; treatment: $0.0918 and 541 tool calls over 20 runs.
+- **Within-cell spread usually exceeds the between-arm difference.**
+  `09-numeric-sweep` treatment ranged 35–65 tool calls across two repeats
+  (30-call spread); no task/arm mean gap is that large.
+- **`10-string-sweep` is the one cell where the arms separate consistently**:
+  treatment used 66 calls in both repeats vs 36/37 baseline, and announce/audit/
+  boundary all fired in both treatment repeats. With N=2 this is a candidate
+  hypothesis (the reminder/audit path may change long-sweep behavior), not a
+  finding.
+- **Treatment wall time is longer in 17 of 20 paired cells** (e.g. small tasks
+  14.4→55.5 s, 15.6→45.1 s) despite near-identical call counts. The direction
+  matches pilot 1, but pilot 2's long baseline showed the opposite, so provider
+  latency remains a plausible cause.
+- **Reminders fired only where expected**: announce (25 calls) in treatment runs
+  of 03/07/08/09/10 and 04 repeat 2; audit and boundary in both 10 repeats and
+  in 09 repeat 2; one 04 repeat finished in 4 tool calls (batch fix via shell)
+  and saw no reminder. Handoff notes were 0 everywhere.
+- **Behavior instrument**: `bench/behavior/analyze.mjs` was run over both
+  variance files. In every treatment run where a signal fired, keyword-matched
+  assistant text appeared later in the same session — announce 11/11, audit 3/3,
+  boundary 5/5. That is `followed`, not `complied`
+  ([evaluation.md](evaluation.md#terminology)); baseline runs emit no plugin log.
+- **Scope limits**: the study measures single `opencode run` processes, two
+  repeats, one model/provider/machine, and provider-reported cost only. It is a
+  variance measurement, not an efficacy claim; per-class analysis should pool
+  the raw records rather than the rounded table above.
