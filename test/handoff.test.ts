@@ -243,4 +243,128 @@ describe("handoff tool", () => {
     expect(result.metadata.submitted).toBe(false)
     expect(client.tui.appendPrompt).toHaveBeenCalledTimes(1)
   })
+
+  it("ignores session.created for a child session (subagent spawn, not the switch)", async () => {
+    const { client } = fakeClient(async () => ({ data: [] }))
+    const hooks = await loadHooks(client)
+    vi.mocked(log).mockClear()
+
+    client.tui.executeCommand.mockImplementation(async () => {
+      await hooks.event!({
+        event: {
+          type: "session.created",
+          properties: { info: { id: "ses_child", parentID: "ses_parent", time: { created: Date.now() } } },
+        },
+      } as never)
+    })
+
+    await hooks.tool!.handoff.execute(args, ctx())
+    // A parented session is not evidence the TUI switched, so the wait must
+    // run out and the prompt land only after the bounded fallback.
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("no session.created"))
+    expect(client.tui.appendPrompt).toHaveBeenCalledTimes(1)
+  })
+
+  it("accepts session.created that arrives after executeCommand returns", async () => {
+    const { client } = fakeClient(async () => ({ data: [] }))
+    const hooks = await loadHooks(client)
+    vi.mocked(log).mockClear()
+
+    // The TUI dispatches the command and returns; the event lands on a later
+    // tick, still inside SWITCH_WAIT_MS. That is the normal production shape.
+    client.tui.executeCommand.mockImplementation(async () => {
+      setTimeout(() => {
+        void hooks.event!({
+          event: {
+            type: "session.created",
+            properties: { info: { id: "ses_late_ok", time: { created: Date.now() } } },
+          },
+        } as never)
+      }, 0)
+    })
+
+    await hooks.tool!.handoff.execute(args, ctx())
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining("no session.created"))
+    expect(client.tui.appendPrompt).toHaveBeenCalledTimes(1)
+  })
+
+  it("holds the settle floor even when the event resolves immediately", async () => {
+    const { client } = fakeClient(async () => ({ data: [] }))
+    const hooks = await loadHooks(client)
+
+    let switchedAt = 0
+    let appendedAt = 0
+    client.tui.executeCommand.mockImplementation(async () => {
+      switchedAt = Date.now()
+      await hooks.event!({
+        event: {
+          type: "session.created",
+          properties: { info: { id: "ses_fast", time: { created: Date.now() } } },
+        },
+      } as never)
+    })
+    client.tui.appendPrompt.mockImplementation(async () => {
+      appendedAt = Date.now()
+    })
+
+    await hooks.tool!.handoff.execute(args, ctx())
+    // The event resolved the wait on the same tick, so the only thing that can
+    // separate the switch from the append is the settle floor. Timer granularity
+    // can report one millisecond short of the sleep, hence the -1 slack.
+    const floor = Number(process.env.TOKEN_NORM_SETTLE_MS)
+    expect(appendedAt - switchedAt).toBeGreaterThanOrEqual(floor - 1)
+  })
+
+  it("keeps the persisted note when appendPrompt throws, and disarms the waiter", async () => {
+    const { client } = fakeClient(async () => ({ data: [] }))
+    const hooks = await loadHooks(client)
+    client.tui.appendPrompt.mockRejectedValueOnce(new Error("prompt gone"))
+
+    await expect(hooks.tool!.handoff.execute(args, ctx())).rejects.toThrow("prompt gone")
+    expect(fs.readdirSync(DIR)).toHaveLength(1)
+    expect(client.tui.submitPrompt).not.toHaveBeenCalled()
+
+    // The waiter is cleared before the append, so a late event from the failed
+    // handoff cannot satisfy the retry's wait.
+    await hooks.event!({
+      event: {
+        type: "session.created",
+        properties: { info: { id: "ses_orphan", time: { created: Date.now() } } },
+      },
+    } as never)
+    vi.mocked(log).mockClear()
+    await hooks.tool!.handoff.execute(args, ctx())
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("no session.created"))
+    expect(fs.readdirSync(DIR)).toHaveLength(2)
+  })
+
+  it("keeps the note and the appended prompt when submitPrompt throws", async () => {
+    const { client } = fakeClient(async () => ({ data: [] }))
+    const handoff = await load(client)
+    client.tui.submitPrompt.mockRejectedValueOnce(new Error("submit gone"))
+
+    await expect(handoff.execute(args, ctx())).rejects.toThrow("submit gone")
+    // The user is left with a filled prompt they can send by hand; the note
+    // survives either way.
+    expect(client.tui.appendPrompt).toHaveBeenCalledTimes(1)
+    expect(fs.readdirSync(DIR)).toHaveLength(1)
+    expect(client.tui.showToast).not.toHaveBeenCalled()
+  })
+
+  it("two overlapping handoffs each write their own note and their own prompt", async () => {
+    const { client } = fakeClient(async () => ({ data: [] }))
+    const hooks = await loadHooks(client)
+
+    const [first, second] = (await Promise.all([
+      hooks.tool!.handoff.execute({ ...args, task: "first" }, ctx()),
+      hooks.tool!.handoff.execute({ ...args, task: "second" }, ctx()),
+    ])) as any[]
+
+    expect(first.metadata.notePath).not.toBe(second.metadata.notePath)
+    expect(fs.readdirSync(DIR)).toHaveLength(2)
+    expect(client.tui.appendPrompt).toHaveBeenCalledTimes(2)
+    const texts = client.tui.appendPrompt.mock.calls.map((c: any[]) => c[0].body.text)
+    expect(texts.some((t: string) => t.includes(first.metadata.notePath))).toBe(true)
+    expect(texts.some((t: string) => t.includes(second.metadata.notePath))).toBe(true)
+  })
 })
