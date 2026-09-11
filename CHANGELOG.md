@@ -9,15 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Benchmark harness no longer charges the treatment arm for a cold bun cache.**
-  `bench/run.mjs` gives every run a fresh `HOME`, so the arm that loads a plugin
-  resolved `@opencode-ai/plugin` against an empty `bun` install cache on every
-  single run. Measured in isolation: `bun install` for that dependency set takes
-  **25.66 s** cold and **0.26 s** with the cache seeded. That cost landed only on
-  the treatment arm and was published as plugin wall-time overhead. The harness
-  now copies `~/.bun/install/cache` into each run's `home/.bun/install/cache`
-  for **both** arms before `opencode` starts, keeping the arms symmetric. The
-  `10-string-sweep` cell needs a re-run for a clean wall-time figure.
+- **Benchmark harness no longer charges the treatment arm for a cold plugin
+  install.** Loading a plugin makes opencode npm-install `@opencode-ai/plugin`
+  into `XDG_CONFIG_HOME/opencode`, and `bench/run.mjs` gives every run a fresh
+  `HOME` and config dir, so that install ran from scratch on every run: **66.7 s**
+  measured via `opencode debug config`. Both arms install, but only on treatment
+  does it block startup, where it was published as plugin wall-time overhead.
+  Seeding the npm cache alone still costs 9.2 s, so the harness now resolves the
+  tree once per invocation and hardlinks `node_modules` + `package.json` +
+  `package-lock.json` into each run's config dir for **both** arms before
+  `opencode` starts. Verified: the plugin-load window drops to **0.213 s**,
+  inside the baseline range. The `10-string-sweep` cell needs a re-run for a
+  clean wall-time figure.
 
 ### Changed
 

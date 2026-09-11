@@ -16,6 +16,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  rmSync,
   writeFileSync,
 } from "node:fs"
 import { homedir } from "node:os"
@@ -27,11 +28,15 @@ const repo = resolve(benchDir, "..")
 const runsRoot = "/tmp/opencode/tn-bench-runs"
 const realDataHome = join(homedir(), ".local", "share", "opencode")
 const modelsCache = join(homedir(), ".cache", "opencode", "models.json")
-// Every run gets a fresh HOME, so a run that loads a plugin would otherwise
-// resolve @opencode-ai/plugin against an empty bun install cache -- 13-70 s of
-// startup that lands only on the treatment arm and shows up as wall time. Seed
-// the real cache into both arms so the arms stay symmetric and neither pays it.
-const bunCache = join(homedir(), ".bun", "install", "cache")
+// Loading any plugin makes opencode npm-install @opencode-ai/plugin into
+// XDG_CONFIG_HOME/opencode. Every run gets a fresh HOME and a fresh config dir,
+// so that install runs from scratch: 66 s measured, and it blocks startup only
+// on the treatment arm, where it showed up as wall time. Seeding the npm cache
+// alone still costs 9 s (npm re-resolves and re-links); seeding the resolved
+// node_modules tree costs 1.6 s. So prime the tree once per invocation and
+// hardlink it into both arms, keeping them symmetric and neither paying it.
+const depsCache = join(runsRoot, ".plugin-deps")
+const depsEntries = ["node_modules", "package.json", "package-lock.json"]
 
 function parseArgs(argv) {
   const args = {
@@ -85,6 +90,52 @@ function runEnv(home, config, data, workspace) {
   delete env.OLDPWD
   for (const key of Object.keys(env)) if (key.startsWith("TOKEN_NORM_")) delete env[key]
   return env
+}
+
+// Resolve @opencode-ai/plugin once, in a throwaway config dir, by running the
+// cheapest opencode subcommand that loads plugins. Result is reused by every
+// run in this invocation. Returns false if priming did not produce a tree, in
+// which case runs fall back to paying the install themselves.
+function primeDeps() {
+  if (depsEntries.every((e) => existsSync(join(depsCache, e)))) return true
+  const tmp = join(runsRoot, ".plugin-deps-prime")
+  rmSync(tmp, { recursive: true, force: true })
+  const home = join(tmp, "home")
+  const config = join(tmp, "config")
+  const data = join(tmp, "data")
+  const workspace = join(tmp, "workspace")
+  for (const d of [home, join(config, "opencode"), join(data, "opencode"), workspace]) {
+    mkdirSync(d, { recursive: true })
+  }
+  installTreatment(config)
+  const res = shell("opencode", ["debug", "config"], {
+    cwd: workspace,
+    env: runEnv(home, config, data, workspace),
+    timeout: 300_000,
+  })
+  const primed = join(config, "opencode")
+  const ok = depsEntries.every((e) => existsSync(join(primed, e)))
+  if (!ok) {
+    process.stderr.write(`warn: plugin dep priming failed (status ${res.status}); runs pay install\n`)
+    return false
+  }
+  rmSync(depsCache, { recursive: true, force: true })
+  mkdirSync(depsCache, { recursive: true })
+  for (const e of depsEntries) cpSync(join(primed, e), join(depsCache, e), { recursive: true })
+  rmSync(tmp, { recursive: true, force: true })
+  return true
+}
+
+// Hardlink the primed tree in (0.05 s vs 3.8 s for a real copy); npm only reads
+// it, and each run's config dir is discarded afterwards.
+function seedDeps(configDir) {
+  const dst = join(configDir, "opencode")
+  for (const e of depsEntries) {
+    const src = join(depsCache, e)
+    if (!existsSync(src)) continue
+    const r = shell("cp", ["-al", src, join(dst, e)])
+    if (r.status !== 0) cpSync(src, join(dst, e), { recursive: true })
+  }
 }
 
 function installTreatment(configDir) {
@@ -292,7 +343,7 @@ function runOne({ taskName, arm, repeat, args, opencodeVersion, gitHead, stamp, 
   if (!existsSync(auth)) throw new Error(`no auth.json at ${auth}`)
   copyFileSync(auth, join(data, "opencode", "auth.json"))
   if (existsSync(modelsCache)) copyFileSync(modelsCache, join(home, ".cache", "opencode", "models.json"))
-  if (existsSync(bunCache)) cpSync(bunCache, join(home, ".bun", "install", "cache"), { recursive: true })
+  seedDeps(config)
   if (arm === "treatment") installTreatment(config)
 
   const env = runEnv(home, config, data, workspace)
@@ -417,6 +468,8 @@ if (resummarizePath) {
 
 let planned = tasks.length * args.arms.length * args.repeats
 if (resummarizePath) planned = recordsCache.length
+
+if (!resummarizePath) primeDeps()
 
 run: for (let repeat = 1; resummarizePath ? false : repeat <= args.repeats; repeat++) {
   for (const taskName of tasks) {

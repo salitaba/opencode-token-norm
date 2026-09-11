@@ -135,14 +135,34 @@ magnitude below 23 s.
 The 4.45 s residual is **unattributed and untested** — no p-value was computed
 for it, and it must not be read as a real plugin cost.
 
-**Confirmed in isolation.** Running `bun install` against the same
-`package.json`/`package-lock.json` the config dir carries (`@opencode-ai/plugin`
-1.18.30, 27 packages) takes **25.66 s** with an empty cache and **0.26 s** with
-the real one seeded — a 98x difference that matches the observed window.
+**Cause.** Loading any plugin makes opencode 1.18.30 resolve
+`@opencode-ai/plugin` into `XDG_CONFIG_HOME/opencode` with **npm** — the config
+dir carries a `package.json` + `package-lock.json` and no `bun.lock`, and
+`home/.npm/_cacache` is written inside the window. Each run gets a fresh `HOME`
+*and* a fresh config dir, so that install runs from scratch. Both arms install,
+but only on the treatment arm does it block startup; in baseline run dirs
+`config/opencode/node_modules` appears ~16-22 s *after* the load window, off the
+startup path.
 
-**Fixed in the harness.** `bench/run.mjs` now copies the real
-`~/.bun/install/cache` into every run's `home/.bun/install/cache`, for *both*
-arms, before `opencode` starts. The figures in this section were measured before
+**Confirmed in isolation**, with `opencode debug config` as a zero-API-cost
+stand-in for startup (it loads plugins and exits):
+
+| config dir state | startup |
+| --- | --- |
+| fresh home + fresh config | **66.7 s** |
+| fresh config, `~/.npm` cache seeded | 9.2 s |
+| resolved `node_modules` tree seeded | **1.6 s** |
+| fully warm (second run, same dirs) | 1.5 s |
+
+Seeding the npm *cache* is not enough — npm still re-resolves and re-links.
+
+**Fixed in the harness.** `bench/run.mjs` resolves the dependency tree once per
+invocation into `/tmp/opencode/tn-bench-runs/.plugin-deps`, then hardlinks
+`node_modules` + `package.json` + `package-lock.json` into every run's config
+dir, for *both* arms, before `opencode` starts (`cp -al`, 0.05 s, vs 3.8 s for a
+real copy). Verified: the plugin-load window in a treatment run drops to
+**0.213 s**, inside the 0.1-0.5 s baseline range, with the plugin still
+resolving from the seeded tree. The figures in this section were measured before
 that fix; the cell needs a re-run for a clean wall-time number, and until then
 the published wall-time figure should be read as measuring the harness.
 
