@@ -22,8 +22,9 @@ import { runAudit } from "../audit.js"
 import { asNormEvent, type BudgetClient, type NormEvent, type ToastClient } from "../host.js"
 import { log, logConfigDiagnostics } from "../log.js"
 import { ANNOUNCE_AT, AUDIT_EVERY, BOUNDARY_AT, CHEAP_TOOLS, MAX_COST, MAX_EFFECTIVE_TOKENS, MODE } from "../config.js"
-import { blockedReason, budgetMetrics, contextLimitFor, evaluateBudget, overPressure } from "./evaluator.js"
+import { blockMessage, budgetSection, contextLimitFor, measure, takeCrossings } from "./evaluator.js"
 import { note } from "./format.js"
+import { evaluatePolicy, maxState, ordinal, renderPolicy, type PolicySections, type PolicyState } from "./policy.js"
 import {
   announceReminder,
   auditReminder,
@@ -76,18 +77,25 @@ export const SessionBudgetPlugin: Plugin = async ({ client }: BudgetPluginInput 
   // tool factory. A module-global reader would let a second plugin instance in
   // the same process shadow this one; injection keeps the binding per instance.
   const statusProvider: StatusProvider = async (sessionID) => {
-    const contextLimit = await contextLimitFor(client, sessionID)
-    const rollup = usage.rollup(usage.rootOf(sessionID))
-    const metrics = budgetMetrics(sessionID, rollup, contextLimit)
+    const { metrics, rollup, contextLimit } = await measure(client, sessionID)
+    const s = state.get(sessionID)
+    // The status tool answers from the SAME machine the hook enforces with, so
+    // it can no longer report "continue" while a reminder is being injected.
+    // It reads without latching: asking where the session stands must not
+    // consume a crossing or advance the stored level.
+    const verdict = evaluatePolicy({
+      calls: s?.calls ?? 0,
+      metrics,
+      mode: MODE,
+      pauseArmed: s?.pendingHandoff ?? false,
+    })
     return snapshotFrom({
       toolCalls: rollup.calls,
       context: usage.has(sessionID) ? usage.get(sessionID).contextNow : 0,
       contextLimit,
       cost: { used: rollup.costUsd, limit: MAX_COST },
       effectiveTokens: { used: rollup.effectiveTokens, limit: MAX_EFFECTIVE_TOKENS },
-      pressured: metrics.some((m) => m.used >= m.warnAt),
-      exceeded: metrics.some((m) => m.used >= m.limit),
-      mode: MODE,
+      state: maxState(verdict.state, s?.level ?? "HEALTHY"),
     })
   }
 
@@ -111,15 +119,16 @@ export const SessionBudgetPlugin: Plugin = async ({ client }: BudgetPluginInput 
         const event = asNormEvent(input?.event)
         usage.handleEvent(event)
 
-        // Handoff mode: a pause plus budget/context pressure is the natural
-        // split point. Events cannot append to output, so the recommendation
-        // is armed here and injected on the next tool call.
+        // Handoff mode: a pause is recorded here; whether it becomes a
+        // recommendation is the policy machine's call on the next tool call,
+        // not a second pressure test in this hook. Events cannot append to
+        // tool output, so this flag is the only thing an event can do.
         const pauseID = MODE === "handoff" ? pauseSessionID(event) : undefined
         if (pauseID) {
           const paused = state.get(pauseID)
-          if (paused && !paused.pendingHandoff && (await overPressure(client, pauseID))) {
+          if (paused && !paused.pendingHandoff) {
             paused.pendingHandoff = true
-            log(`${pauseID} handoff armed (pause + budget pressure)`)
+            log(`${pauseID} pause observed (handoff armed pending pressure)`)
           }
         }
 
@@ -180,58 +189,101 @@ export const SessionBudgetPlugin: Plugin = async ({ client }: BudgetPluginInput 
         /* measurement must never break a tool call */
       }
 
-      // Threshold 0 -- task boundary. Highest priority: acting on it avoids
-      // the spend the other two thresholds only measure after the fact.
-      if (s.pendingBoundary) {
-        s.pendingBoundary = false
-        output.output += note(boundaryReminder(s.calls))
-        return
-      }
-
-      // Threshold 1 -- the startup reflex, fired late but before the bulk of
-      // the spend. The norm wants this BEFORE the work; in practice the agent
-      // only discovers the true size once it is underway, so catch it at the
-      // first moment the task is provably "big" and force the statement then.
-      if (!s.announced && s.calls >= ANNOUNCE_AT) {
-        s.announced = true
-        log(`${input.sessionID} announce-threshold at ${s.calls} calls (${topTools(s)})`)
-        output.output += note(announceReminder(s.calls, topTools(s)))
-        return
-      }
-
-      // Threshold 2 -- the midway audit. Recurring, because the norm's real
-      // failure mode is a session that quietly runs 3x past where a split
-      // should have happened.
-      if (s.calls > 0 && s.calls - s.lastAudit >= AUDIT_EVERY) {
-        s.lastAudit = s.calls
-        log(`${input.sessionID} audit-threshold at ${s.calls} calls (${topTools(s)})`)
-        // Run the audit HERE rather than asking the agent to run it.
-        //
-        // "Run this command and report the number" is advice, and advice at a
-        // checkpoint loses to the task in flight every time: one session was
-        // told to audit at call 79, kept working, and produced the number only
-        // when the user asked afterwards. The command is cheap, deterministic
-        // and read-only, so the plugin runs it and staples the RESULT on. The
-        // agent then has the number in hand and no step to defer -- only a
-        // fact to report.
-        const audit = runAudit(input.sessionID)
-        output.output += note(auditReminder(s.calls, audit))
-      }
-
+      // ONE evaluation, ONE block, at most one toast.
+      //
+      // This used to be four independent `if`s, two of which returned early.
+      // That made the reminders compete: a task boundary suppressed the audit,
+      // an announce suppressed a budget crossing, and when three did land
+      // together the tool result carried three separate <system-reminder>
+      // blocks. Both failures teach the same lesson to the agent -- that these
+      // notices are noise to be skimmed -- which is precisely what the
+      // boundary reminder's own dedupe logic exists to prevent. So everything
+      // due on this call is now collected into one block with a fixed section
+      // order, and nothing is dropped to make room for anything else.
       try {
-        const lines = await evaluateBudget(client, input.sessionID, s)
+        // A pause is spent by the next tool call whether or not it fires. The
+        // model has resumed work, so the pause is no longer the quiet moment
+        // the recommendation was meant to ride on; leaving the flag armed
+        // would let a handoff surface mid-task the instant pressure arrived.
+        const pauseArmed = s.pendingHandoff
+        s.pendingHandoff = false
+
+        const { metrics } = await measure(client, input.sessionID)
+        const verdict = evaluatePolicy({ calls: s.calls, metrics, mode: MODE, pauseArmed })
+        const previous = s.level
+        const level = maxState(previous, verdict.state)
+        const rose = ordinal(level) > ordinal(previous)
+        s.level = level
+        for (const axis of Object.values(verdict.axes)) s.axisLevels[axis.name] = axis.state
+
+        const sections: PolicySections = {}
+
+        // Section 1 -- task boundary. First because acting on it avoids the
+        // spend the others only measure after the fact.
+        if (s.pendingBoundary) {
+          s.pendingBoundary = false
+          sections.boundary = boundaryReminder(s.calls)
+        }
+
+        // Section 2 -- the startup reflex, fired late but before the bulk of
+        // the spend. The norm wants it BEFORE the work; in practice the agent
+        // only discovers the true size once underway, so it lands at the first
+        // moment the task is provably "big".
+        if (!s.announced && s.calls >= ANNOUNCE_AT) {
+          s.announced = true
+          log(`${input.sessionID} announce-threshold at ${s.calls} calls (${topTools(s)})`)
+          sections.announce = announceReminder(s.calls, topTools(s))
+        }
+
+        // Section 3 -- the midway audit. Recurring, because the norm's real
+        // failure mode is a session that quietly runs 3x past where a split
+        // should have happened.
+        if (s.calls > 0 && s.calls - s.lastAudit >= AUDIT_EVERY) {
+          s.lastAudit = s.calls
+          log(`${input.sessionID} audit-threshold at ${s.calls} calls (${topTools(s)})`)
+          // Run the audit HERE rather than asking the agent to run it.
+          //
+          // "Run this command and report the number" is advice, and advice at
+          // a checkpoint loses to the task in flight every time: one session
+          // was told to audit at call 79, kept working, and produced the
+          // number only when the user asked afterwards. The command is cheap,
+          // deterministic and read-only, so the plugin runs it and staples the
+          // RESULT on. The agent then has the number in hand and no step to
+          // defer -- only a fact to report.
+          sections.audit = auditReminder(s.calls, runAudit(input.sessionID))
+        }
+
+        // Section 4 -- budget crossings, latched per metric so a sustained
+        // overage reports once. Observe mode still latches and logs: it
+        // measures what WOULD have been injected without injecting it.
+        const crossed = takeCrossings(input.sessionID, s, metrics)
+        if (crossed.length > 0 && MODE !== "observe") {
+          sections.budget = budgetSection(metrics, crossed)
+        }
+
+        // Section 5 -- the handoff skeleton, last because it is the
+        // conclusion the sections above argue for.
+        //
+        // Keyed on the VERDICT, not the stored level. s.level is monotone, so
+        // testing it here would re-inject the whole skeleton on every tool
+        // call for the rest of the session once a handoff had ever been
+        // recommended. The verdict is one-shot by construction: it can only
+        // reach HANDOFF_RECOMMENDED while a pause is armed, and the pause is
+        // consumed at the top of this hook.
+        if (verdict.state === "HANDOFF_RECOMMENDED") {
+          log(`${input.sessionID} handoff recommended at ${s.calls} calls (${verdict.driver.detail})`)
+          sections.handoff = handoffLines(input.sessionID)
+        }
+
+        const lines = renderPolicy(verdict, s.calls, sections)
         if (lines) {
           output.output += note(lines)
-          toast(client, `Token norm: budget crossed (${s.calls} calls)`)
+          // One toast per emission, titled by the state, so the TUI shows the
+          // same severity the injected block does.
+          if (rose || sections.handoff) toast(client, `Token norm: ${level} (${s.calls} calls)`)
         }
       } catch {
-        /* budget evaluation is advisory; never break the tool call */
-      }
-
-      if (s.pendingHandoff) {
-        s.pendingHandoff = false
-        output.output += note(handoffLines(input.sessionID))
-        toast(client, "Token norm: handoff recommended")
+        /* the policy pass is advisory; never break a tool call */
       }
     },
 
@@ -241,13 +293,25 @@ export const SessionBudgetPlugin: Plugin = async ({ client }: BudgetPluginInput 
     "tool.execute.before": async (input) => {
       if (MODE !== "block") return
       if (CHEAP_TOOLS.has(input.tool) || input.tool === HANDOFF_TOOL) return
-      let reason: string | undefined
+      let message: string | undefined
       try {
-        reason = await blockedReason(client, input.sessionID)
+        const { metrics } = await measure(client, input.sessionID)
+        const s = state.get(input.sessionID)
+        // BLOCKED is the machine's verdict, not a separate over-limit test, so
+        // the gate can never refuse a call the status tool calls healthy.
+        const verdict = evaluatePolicy({
+          calls: s?.calls ?? 0,
+          metrics,
+          mode: MODE,
+          pauseArmed: s?.pendingHandoff ?? false,
+        })
+        if (verdict.state === "BLOCKED") message = blockMessage(metrics)
       } catch {
+        // An unmeasurable session is never blocked: refusing work on a number
+        // we could not read would strand the session on our own bug.
         return
       }
-      if (reason) throw new Error(reason)
+      if (message) throw new Error(message)
     },
 
     // Compaction is the one moment the agent provably re-reads its own rules.

@@ -15,7 +15,7 @@
 // query must never break a session.
 
 import { tool } from "@opencode-ai/plugin"
-import type { BudgetMode } from "./config.js"
+import type { PolicyState } from "./budget/policy.js"
 
 export type Recommendation = "continue" | "warn" | "handoff" | "block"
 
@@ -39,6 +39,9 @@ export interface StatusSnapshot {
     cost: StatusMetric
     effectiveTokens: StatusMetric
   }
+  /** The policy state this recommendation was derived from, reported verbatim
+   * so a caller can see the severity without inferring it from the advice. */
+  state: PolicyState
   recommendation: Recommendation
 }
 
@@ -49,11 +52,8 @@ export interface StatusFacts {
   contextLimit?: number
   cost: { used: number; limit?: number }
   effectiveTokens: { used: number; limit?: number }
-  /** A tracked metric is at/over its warn threshold, i.e. budgetMetrics.warnAt. */
-  pressured: boolean
-  /** A tracked metric is at/over its hard limit, i.e. what blockedReason refuses on. */
-  exceeded: boolean
-  mode: BudgetMode
+  /** The verdict from the same policy machine that drives enforcement. */
+  state: PolicyState
 }
 
 export type StatusProvider = (
@@ -70,17 +70,23 @@ function metric(used: number, limit: number | undefined): StatusMetric {
   return { used, limit: limit ?? null }
 }
 
-/** The strongest action the plugin would take right now, mirroring its own
- * gates: block only in block mode over a hard limit, handoff only when handoff
- * mode is under pressure, warn for any other crossing. */
-export function recommend(facts: Pick<StatusFacts, "pressured" | "exceeded" | "mode">): Recommendation {
-  if (facts.exceeded) {
-    if (facts.mode === "block") return "block"
-    if (facts.mode === "handoff") return "handoff"
-    return "warn"
-  }
-  if (facts.pressured && facts.mode === "handoff") return "handoff"
-  return facts.pressured ? "warn" : "continue"
+/** The policy state translated into the advice the caller asked for.
+ *
+ * This is a MAP, not a second ladder. It used to be a function that re-derived
+ * severity from (pressured, exceeded, mode) -- a fourth copy of the gating
+ * rules that drifted from the ones the hook actually enforced, so the tool
+ * could answer "continue" on a session that was being warned. The state now
+ * arrives already decided; all that is left is naming it. */
+const RECOMMENDATION: Record<PolicyState, Recommendation> = {
+  HEALTHY: "continue",
+  ATTENTION: "warn",
+  PRESSURE: "warn",
+  HANDOFF_RECOMMENDED: "handoff",
+  BLOCKED: "block",
+}
+
+export function recommendationFor(state: PolicyState): Recommendation {
+  return RECOMMENDATION[state]
 }
 
 export function snapshotFrom(facts: StatusFacts): StatusSnapshot {
@@ -96,7 +102,8 @@ export function snapshotFrom(facts: StatusFacts): StatusSnapshot {
       cost: metric(facts.cost.used, facts.cost.limit),
       effectiveTokens: metric(facts.effectiveTokens.used, facts.effectiveTokens.limit),
     },
-    recommendation: recommend(facts),
+    state: facts.state,
+    recommendation: recommendationFor(facts.state),
   }
 }
 
@@ -106,9 +113,7 @@ export function emptyStatus(): StatusSnapshot {
     context: 0,
     cost: { used: 0 },
     effectiveTokens: { used: 0 },
-    pressured: false,
-    exceeded: false,
-    mode: "warn",
+    state: "HEALTHY",
   })
 }
 
@@ -137,7 +142,9 @@ export function createStatusTool(provider?: StatusProvider) {
       "(toolCalls, cost, effectiveTokens) rolls up the whole session tree -- root",
       "plus descendant sessions; session.context is the current session's window",
       "only. Each metric is { used, limit }, limit null when unconfigured.",
-      "recommendation is continue | warn | handoff | block.",
+      "state is the policy state (HEALTHY, ATTENTION, PRESSURE,",
+      "HANDOFF_RECOMMENDED, BLOCKED) and never decreases within a session;",
+      "recommendation is continue | warn | handoff | block, derived from it.",
       "",
       "Use before starting a large task, when the user asks what the session has cost,",
       "or to check whether the token-norm plugin would warn, hand off, or block now.",

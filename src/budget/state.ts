@@ -6,6 +6,7 @@
 
 import { CHEAP_TOOLS } from "../config.js"
 import { UsageTracker } from "../usage.js"
+import type { PolicyState } from "./policy.js"
 
 export interface SessionState {
   calls: number
@@ -14,10 +15,24 @@ export interface SessionState {
   tools: Map<string, number>
   seenMessages: Set<string>
   pendingBoundary: boolean
-  /** A pause plus budget pressure armed a handoff recommendation. */
+  /** A pause was observed; handoff mode turns it into a recommendation once
+   * the session is also under pressure. */
   pendingHandoff: boolean
   /** Budget metrics whose crossing has already been reported this session. */
   crossed: Set<string>
+  /** Highest severity this session has ever reached.
+   *
+   * MONOTONE BY CONSTRUCTION: only ever assigned via max(). A session that
+   * recovers below a threshold does not walk back down, because the reminder
+   * for a crossing has already been injected and re-arming it would let a
+   * metric hovering at 0.799/0.801 of the context window re-fire on every
+   * other tool call. Severity here means "how bad has this gotten", not "how
+   * bad is it this instant" -- the instantaneous read is the axis states,
+   * recomputed fresh on every call. */
+  level: PolicyState
+  /** Per-axis severity from the last evaluation, kept so the rendered header
+   * can name the driver without recomputing. */
+  axisLevels: Record<string, PolicyState>
 }
 
 export const state = new Map<string, SessionState>()
@@ -45,6 +60,8 @@ export function track(sessionID: string, tool: string): SessionState {
       pendingBoundary: false,
       pendingHandoff: false,
       crossed: new Set(),
+      level: "HEALTHY",
+      axisLevels: {},
     }
     state.set(sessionID, s)
   }

@@ -1,4 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest"
+import {
+  CONTEXT_KEY,
+  evaluatePolicy,
+  maxState,
+  ordinal,
+  renderPolicy,
+  type PolicyState,
+} from "../src/budget/policy.js"
 import { state, track } from "../src/budget/state.js"
 import { UsageTracker, type StepTokens } from "../src/usage.js"
 
@@ -373,5 +381,127 @@ describe("SessionState call counters (seeded randomized tracking)", () => {
     expect(track("ses_cheap", "read")).toBe(s)
     expect(s.calls).toBe(2)
     expect(s.tools.get("read")).toBe(2)
+  })
+})
+
+// The policy machine is pure -- numbers in, verdict out -- so its guarantees
+// can be checked directly instead of inferred from injected text.
+describe("policy state machine invariants", () => {
+  const CONTEXT_LIMIT = 1000
+  const WARN_AT = CONTEXT_LIMIT * 0.8
+
+  const contextMetric = (used: number) => ({
+    key: CONTEXT_KEY,
+    label: "Context now",
+    used,
+    limit: CONTEXT_LIMIT,
+    warnAt: WARN_AT,
+    format: (n: number) => `${n}`,
+  })
+
+  const callsMetric = (used: number, limit: number) => ({
+    key: "tool-calls",
+    label: "Tool calls",
+    used,
+    limit,
+    warnAt: limit,
+    format: (n: number) => `${n}`,
+  })
+
+  it("never decreases when the stored level is folded with max", () => {
+    const rnd = mulberry32(0x5eed0004)
+    let level: PolicyState = "HEALTHY"
+
+    for (let i = 0; i < 500; i++) {
+      // Deliberately non-monotone inputs: context swings freely, the pause
+      // comes and goes, and the mode changes under the machine.
+      const verdict = evaluatePolicy({
+        calls: Math.floor(rnd() * 60),
+        metrics: [contextMetric(Math.floor(rnd() * 1200))],
+        mode: pick(rnd, ["observe", "warn", "handoff", "block"]),
+        pauseArmed: rnd() < 0.5,
+      })
+      const next = maxState(level, verdict.state)
+      expect(ordinal(next)).toBeGreaterThanOrEqual(ordinal(level))
+      level = next
+    }
+    expect(ordinal(level)).toBeGreaterThan(ordinal("HEALTHY"))
+  })
+
+  // The reason the stored level is monotone: a metric sitting on its threshold
+  // would otherwise re-arm every time it dipped, and re-fire forever.
+  it("does not oscillate across the context warn boundary", () => {
+    let level: PolicyState = "HEALTHY"
+    let rises = 0
+
+    for (let i = 0; i < 50; i++) {
+      const used = i % 2 === 0 ? WARN_AT + 1 : WARN_AT - 1
+      const verdict = evaluatePolicy({
+        calls: 0,
+        metrics: [contextMetric(used)],
+        mode: "warn",
+        pauseArmed: false,
+      })
+      const next = maxState(level, verdict.state)
+      if (ordinal(next) > ordinal(level)) rises++
+      level = next
+    }
+
+    // One rise for 25 crossings: the reminder fires on the first, and the
+    // other 24 are the wallpaper this design exists to prevent.
+    expect(rises).toBe(1)
+    expect(level).toBe("PRESSURE")
+  })
+
+  it("takes the max across axes and names the driver", () => {
+    const quiet = evaluatePolicy({ calls: 0, metrics: [], mode: "warn", pauseArmed: false })
+    expect(quiet.state).toBe("HEALTHY")
+
+    // Calls alone stop at ATTENTION: a long session is expensive, not endangered.
+    const long = evaluatePolicy({ calls: 500, metrics: [], mode: "warn", pauseArmed: false })
+    expect(long.state).toBe("ATTENTION")
+    expect(long.driver.name).toBe("calls")
+
+    // A budget crossing outranks the call count, and says so in the header.
+    const overBudget = evaluatePolicy({
+      calls: 500,
+      metrics: [callsMetric(10, 10)],
+      mode: "warn",
+      pauseArmed: false,
+    })
+    expect(overBudget.state).toBe("PRESSURE")
+    expect(overBudget.driver.name).toBe("budget")
+    expect(overBudget.exceeded).toBe(true)
+  })
+
+  it("applies the mode after the max, never inside an axis", () => {
+    const metrics = [callsMetric(10, 10)]
+
+    // Observe measures exactly what warn measures. The suppression is at
+    // render time, so token_norm_status keeps telling the truth.
+    expect(evaluatePolicy({ calls: 0, metrics, mode: "observe", pauseArmed: true }).state).toBe("PRESSURE")
+    expect(evaluatePolicy({ calls: 0, metrics, mode: "warn", pauseArmed: true }).state).toBe("PRESSURE")
+
+    // Handoff needs pressure AND a pause; either alone is not enough.
+    expect(evaluatePolicy({ calls: 0, metrics, mode: "handoff", pauseArmed: false }).state).toBe("PRESSURE")
+    expect(evaluatePolicy({ calls: 500, metrics: [], mode: "handoff", pauseArmed: true }).state).toBe("ATTENTION")
+    expect(evaluatePolicy({ calls: 0, metrics, mode: "handoff", pauseArmed: true }).state).toBe("HANDOFF_RECOMMENDED")
+
+    // Block acts on the hard limit only -- pressure alone never strands a session.
+    expect(evaluatePolicy({ calls: 0, metrics, mode: "block", pauseArmed: false }).state).toBe("BLOCKED")
+    expect(evaluatePolicy({ calls: 0, metrics: [contextMetric(WARN_AT + 1)], mode: "block", pauseArmed: false }).state)
+      .toBe("PRESSURE")
+  })
+
+  it("emits nothing without a section, and one header with any", () => {
+    const verdict = evaluatePolicy({ calls: 500, metrics: [], mode: "warn", pauseArmed: false })
+    expect(renderPolicy(verdict, 500, {})).toBeUndefined()
+    // An empty section is not a section: a bare header is noise.
+    expect(renderPolicy(verdict, 500, { announce: [] })).toBeUndefined()
+
+    const lines = renderPolicy(verdict, 500, { announce: ["a"], audit: ["b"] })
+    expect(lines?.filter((l) => l.startsWith("TOKEN NORM -- ATTENTION"))).toHaveLength(1)
+    // Fixed order regardless of which sections are present.
+    expect(lines?.indexOf("a")).toBeLessThan(lines?.indexOf("b") ?? -1)
   })
 })

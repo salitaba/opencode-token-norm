@@ -1,4 +1,9 @@
-// Budget measurement and threshold evaluation.
+// Budget measurement: turn provider events into the numbers policy.ts judges.
+//
+// This module measures and formats. It does NOT decide how alarmed to be --
+// that is policy.ts, and keeping the split sharp is why the status tool and the
+// enforcement hook can no longer disagree. Anything here that returns a
+// severity would be a second ladder.
 
 import {
   CONTEXT_LIMIT,
@@ -13,17 +18,10 @@ import type { BudgetClient } from "../host.js"
 import { log } from "../log.js"
 import type { Rollup } from "../usage.js"
 import { fmtCount, fmtTokens, fmtUsd } from "./format.js"
+import { CONTEXT_KEY, type BudgetMetric } from "./policy.js"
 import { usage, type SessionState } from "./state.js"
 
-export interface BudgetMetric {
-  key: string
-  label: string
-  used: number
-  limit: number
-  /** Crossing threshold: the limit for cost/tokens/calls, a fraction of it for context. */
-  warnAt: number
-  format: (n: number) => string
-}
+export type { BudgetMetric } from "./policy.js"
 
 const modelContextLimits = new Map<string, number>()
 
@@ -85,7 +83,7 @@ export function budgetMetrics(sessionID: string, rollup: Rollup, contextLimit: n
     // parent and its subagents, which each have separate windows.
     const used = usage.get(sessionID).contextNow
     metrics.push({
-      key: "context",
+      key: CONTEXT_KEY,
       label: "Context now",
       used,
       limit: contextLimit,
@@ -96,6 +94,40 @@ export function budgetMetrics(sessionID: string, rollup: Rollup, contextLimit: n
   return metrics
 }
 
+export interface Measurement {
+  metrics: BudgetMetric[]
+  rollup: Rollup
+  contextLimit: number | undefined
+}
+
+/** One read of every number the policy needs, so a single tool call resolves
+ * the context window once instead of once per consumer. */
+export async function measure(client: BudgetClient | undefined, sessionID: string): Promise<Measurement> {
+  const contextLimit = await contextLimitFor(client, sessionID)
+  const rollup = usage.rollup(usage.rootOf(sessionID))
+  return { metrics: budgetMetrics(sessionID, rollup, contextLimit), rollup, contextLimit }
+}
+
+/** Metrics that crossed for the FIRST time, latching each so a sustained
+ * overage reports once instead of on every subsequent tool call. Mutates
+ * s.crossed, and logs even in observe mode -- observing is the point there. */
+export function takeCrossings(sessionID: string, s: SessionState, metrics: BudgetMetric[]): string[] {
+  const crossed: string[] = []
+  for (const m of metrics) {
+    if (m.used >= m.warnAt && !s.crossed.has(m.key)) {
+      s.crossed.add(m.key)
+      crossed.push(m.key)
+    }
+  }
+  if (crossed.length === 0) return crossed
+  const detail = metrics
+    .filter((m) => crossed.includes(m.key))
+    .map((m) => `${m.key} ${m.format(m.used)}/${m.format(m.limit)}`)
+    .join(", ")
+  log(`${sessionID} budget crossing at ${s.calls} calls: ${detail}`)
+  return crossed
+}
+
 const MODE_ADVICE: Record<BudgetMode, string> = {
   observe: `Observe mode: crossing logged, nothing injected (empirical validation).`,
   warn: `Report this to the user in your next message. If work remains, propose a split with a 3-line handoff.`,
@@ -103,7 +135,9 @@ const MODE_ADVICE: Record<BudgetMode, string> = {
   block: `This limit is now enforced: non-cheap tool calls are refused until the session ends or the mode changes.`,
 }
 
-function budgetLines(metrics: BudgetMetric[], crossed: string[]): string[] {
+/** The budget section of the injected block: every tracked metric with its
+ * number, then which ones crossed on this call. */
+export function budgetSection(metrics: BudgetMetric[], crossed: string[]): string[] {
   const lines = [`TOKEN NORM -- BUDGET (estimated from provider step-finish events):`]
   for (const m of metrics) {
     const pct = m.limit > 0 ? Math.round((m.used / m.limit) * 100) : 0
@@ -115,47 +149,10 @@ function budgetLines(metrics: BudgetMetric[], crossed: string[]): string[] {
   return lines
 }
 
-/** Fires once per crossing per metric; returns lines to inject, or undefined
- * in observe mode (log only) and when nothing new crossed. */
-export async function evaluateBudget(
-  client: BudgetClient | undefined,
-  sessionID: string,
-  s: SessionState,
-): Promise<string[] | undefined> {
-  const limit = await contextLimitFor(client, sessionID)
-  const rollup = usage.rollup(usage.rootOf(sessionID))
-  const metrics = budgetMetrics(sessionID, rollup, limit)
-  const crossed: string[] = []
-  for (const m of metrics) {
-    if (m.used >= m.warnAt && !s.crossed.has(m.key)) {
-      s.crossed.add(m.key)
-      crossed.push(m.key)
-    }
-  }
-  if (crossed.length === 0) return undefined
-  const detail = metrics
-    .filter((m) => crossed.includes(m.key))
-    .map((m) => `${m.key} ${m.format(m.used)}/${m.format(m.limit)}`)
-    .join(", ")
-  log(`${sessionID} budget crossing at ${s.calls} calls: ${detail}`)
-  if (MODE === "observe") return undefined
-  return budgetLines(metrics, crossed)
-}
-
-export async function overPressure(client: BudgetClient | undefined, sessionID: string): Promise<boolean> {
-  const limit = await contextLimitFor(client, sessionID)
-  const rollup = usage.rollup(usage.rootOf(sessionID))
-  return budgetMetrics(sessionID, rollup, limit).some((m) => m.used >= m.warnAt)
-}
-
-export async function blockedReason(
-  client: BudgetClient | undefined,
-  sessionID: string,
-): Promise<string | undefined> {
-  const limit = await contextLimitFor(client, sessionID)
-  const rollup = usage.rollup(usage.rootOf(sessionID))
-  const over = budgetMetrics(sessionID, rollup, limit).filter((m) => m.used >= m.limit)
-  if (over.length === 0) return undefined
+/** The refusal thrown in block mode. Names every exceeded metric and both ways
+ * out, because a blocked session with no escape is a broken session. */
+export function blockMessage(metrics: BudgetMetric[]): string {
+  const over = metrics.filter((m) => m.used >= m.limit)
   return [
     `TOKEN NORM block (mode=block): ${over.map((m) => `${m.label} ${m.format(m.used)} / ${m.format(m.limit)}`).join("; ")}.`,
     `Non-cheap tool calls are refused while over budget. In your next message:`,

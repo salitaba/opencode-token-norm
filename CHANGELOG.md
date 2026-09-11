@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Unified policy state machine.** Severity is now computed once, in
+  `src/budget/policy.ts`, as a monotone state machine
+  (`HEALTHY` < `ATTENTION` < `PRESSURE` < `HANDOFF_RECOMMENDED` < `BLOCKED`)
+  over three axes -- call count, configured budgets, and the context window.
+  The mode is applied after the max, not inside an axis. Previously eight
+  independent decision sites in the tool hook each owned a threshold and a
+  latch, which allowed three separate `<system-reminder>` blocks and two toasts
+  on a single tool call. The plugin now emits **at most one block per tool
+  call**, with a state header naming the driving axis and a fixed section
+  order: boundary, announce, audit, budget, handoff. At most one toast, titled
+  by state.
+- **Reminders no longer suppress each other.** The early returns after the
+  task-boundary and announce reminders are gone. Deferral was a side effect of
+  those returns rather than a design goal: it spread co-occurring thresholds
+  across separate tool calls and skipped the budget check entirely on those
+  calls. Everything due on a call now lands together in the one block.
+- **`token_norm_status` answers from the enforcement machine.** The `recommend()`
+  ladder in `src/status.ts`, which re-derived severity from
+  `(pressured, exceeded, mode)`, is replaced by a direct state map. The snapshot
+  gains a `state` field alongside `recommendation`. Two visible contract
+  changes: a session at or past `TOKEN_NORM_ANNOUNCE_AT` with no budget
+  pressure now reports `warn` where it reported `continue`; and in handoff mode,
+  pressure *without* a pause now reports `warn` rather than `handoff`, matching
+  what the plugin would actually do -- a handoff has always required a natural
+  pause as well.
+
 ### Added
 
 - Config diagnostics: a malformed or misspelled `TOKEN_NORM_*` setting is

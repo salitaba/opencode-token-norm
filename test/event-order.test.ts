@@ -76,7 +76,16 @@ async function status(hooks: any, sessionID: string): Promise<any> {
 }
 
 describe("event ordering", () => {
-  it("defers lower-priority reminders when several are due on the same call", async () => {
+  // Reminders due on the same call COEXIST in one block; they no longer
+  // suppress each other.
+  //
+  // The old hook returned early after the boundary and again after the
+  // announce, so three thresholds landing together were spread across three
+  // tool calls and the budget check was skipped on two of them. Deferral was
+  // never the goal -- it was a side effect of the early returns, and it
+  // delayed exactly the warnings that were most overdue. One block, one
+  // header, fixed section order.
+  it("collects every reminder due on the same call into one block", async () => {
     const { hooks, runAudit } = await load({
       TOKEN_NORM_ANNOUNCE_AT: "41",
       TOKEN_NORM_AUDIT_EVERY: "41",
@@ -87,19 +96,24 @@ describe("event ordering", () => {
     expect(before[39]).not.toContain("TOKEN NORM")
     expect(runAudit).not.toHaveBeenCalled()
 
-    const deferred = await replay(hooks, s, [{ kind: "tool" }, { kind: "tool" }])
-    expect(deferred[0]).toContain("new request arrived 41 tool calls deep")
-    expect(deferred[0]).not.toContain("tool calls in this session")
-    expect(deferred[0]).not.toContain("Audit checkpoint")
-    expect(deferred[1]).toContain("42 tool calls in this session")
-    expect(deferred[1]).not.toContain("Audit checkpoint")
-    expect(runAudit).not.toHaveBeenCalled()
-
-    const audited = await replay(hooks, s, [{ kind: "tool" }])
-    expect(audited[0]).toContain("Audit checkpoint")
-    expect(audited[0]).toContain("effective fresh tokens: 123k")
+    const together = await replay(hooks, s, [{ kind: "tool" }])
+    expect(together[0]).toContain("new request arrived 41 tool calls deep")
+    expect(together[0]).toContain("41 tool calls in this session")
+    expect(together[0]).toContain("Audit checkpoint")
+    expect(together[0]).toContain("effective fresh tokens: 123k")
     expect(runAudit).toHaveBeenCalledTimes(1)
     expect(runAudit).toHaveBeenCalledWith(s)
+
+    // One block, not three: a single <system-reminder> wrapper carrying a
+    // single state header.
+    expect(together[0].match(/<system-reminder>/g)).toHaveLength(1)
+    expect(together[0].match(/^TOKEN NORM -- (HEALTHY|ATTENTION|PRESSURE|HANDOFF_RECOMMENDED|BLOCKED)/gm)).toHaveLength(1)
+
+    // Each latch still holds afterwards: announce is once-ever, the audit
+    // waits a full interval, the boundary needs a new user message.
+    const quiet = await replay(hooks, s, [{ kind: "tool" }])
+    expect(quiet[0]).not.toContain("TOKEN NORM")
+    expect(runAudit).toHaveBeenCalledTimes(1)
   })
 
   it("injects the boundary once at the next tool call, across revisions and step events", async () => {

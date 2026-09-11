@@ -14,10 +14,9 @@ import {
   createStatusTool,
   emptyStatus,
   readStatus,
-  recommend,
+  recommendationFor,
   renderStatus,
   snapshotFrom,
-  type Recommendation,
   type StatusSnapshot,
 } from "../src/status.js"
 
@@ -29,9 +28,7 @@ describe("status snapshot", () => {
         context: 1234,
         cost: { used: 0.5 },
         effectiveTokens: { used: 100 },
-        pressured: false,
-        exceeded: false,
-        mode: "warn",
+        state: "HEALTHY",
       }),
     ).toEqual({
       session: { scope: "current-session", context: 1234, contextLimit: null },
@@ -41,6 +38,7 @@ describe("status snapshot", () => {
         cost: { used: 0.5, limit: null },
         effectiveTokens: { used: 100, limit: null },
       },
+      state: "HEALTHY",
       recommendation: "continue",
     })
   })
@@ -52,9 +50,7 @@ describe("status snapshot", () => {
       contextLimit: 100,
       cost: { used: 1, limit: 2 },
       effectiveTokens: { used: 3, limit: 1000 },
-      pressured: false,
-      exceeded: false,
-      mode: "warn",
+      state: "HEALTHY",
     })
     expect(snap.session).toEqual({ scope: "current-session", context: 50, contextLimit: 100 })
     expect(snap.budget).toEqual({
@@ -65,17 +61,15 @@ describe("status snapshot", () => {
     })
   })
 
-  it("recommends by threshold and mode", () => {
-    const at = (pressured: boolean, exceeded: boolean, mode: "observe" | "warn" | "handoff" | "block"): Recommendation =>
-      recommend({ pressured, exceeded, mode })
-    expect(at(false, false, "warn")).toBe("continue")
-    expect(at(true, false, "warn")).toBe("warn")
-    expect(at(true, false, "observe")).toBe("warn")
-    expect(at(false, true, "warn")).toBe("warn")
-    expect(at(true, false, "block")).toBe("warn")
-    expect(at(false, true, "block")).toBe("block")
-    expect(at(true, false, "handoff")).toBe("handoff")
-    expect(at(false, true, "handoff")).toBe("handoff")
+  // The mode no longer enters here. It is applied once, inside the policy
+  // machine, when the state is computed; by the time a snapshot is built the
+  // severity is already decided and this is a pure naming of it.
+  it("names every policy state with one recommendation", () => {
+    expect(recommendationFor("HEALTHY")).toBe("continue")
+    expect(recommendationFor("ATTENTION")).toBe("warn")
+    expect(recommendationFor("PRESSURE")).toBe("warn")
+    expect(recommendationFor("HANDOFF_RECOMMENDED")).toBe("handoff")
+    expect(recommendationFor("BLOCKED")).toBe("block")
   })
 
   it("renders parseable JSON", () => {
@@ -99,9 +93,7 @@ describe("status snapshot", () => {
       context: 10,
       cost: { used: 0 },
       effectiveTokens: { used: 0 },
-      pressured: false,
-      exceeded: false,
-      mode: "warn",
+      state: "HEALTHY",
     })
     expect(await readStatus(() => ok, "ses_ok")).toEqual(ok)
   })
@@ -113,9 +105,7 @@ describe("status snapshot", () => {
         context: 0,
         cost: { used: 0 },
         effectiveTokens: { used: 0 },
-        pressured: false,
-        exceeded: false,
-        mode: "warn",
+        state: "HEALTHY",
       })
     const first: any = createStatusTool(() => snapshotFor(1))
     const second: any = createStatusTool(() => snapshotFor(2))
@@ -175,6 +165,7 @@ describe("token_norm_status tool", () => {
         cost: { used: 0, limit: null },
         effectiveTokens: { used: 0, limit: null },
       },
+      state: "HEALTHY",
       recommendation: "continue",
     })
   })
@@ -228,25 +219,38 @@ describe("token_norm_status tool", () => {
     expect((await status(block, "ses_block")).recommendation).toBe("block")
   })
 
-  it("recommends handoff only in handoff mode under pressure", async () => {
+  // Pressure alone is NOT a handoff, even in handoff mode. The plugin has
+  // always required a pause as well -- recommending a split mid-task would
+  // interrupt work in flight -- but the status tool used to derive its own
+  // answer from (pressured, mode) and so reported "handoff" for a session the
+  // plugin would only have warned about. Both now read the same machine.
+  it("reports handoff only once a pause joins the pressure", async () => {
     const h = await freshPlugin({
       TOKEN_NORM_MODE: "handoff",
       TOKEN_NORM_CONTEXT_LIMIT: "1000",
       TOKEN_NORM_CONTEXT_WARN: "0.5",
     })
     const s = "ses_handoff_status"
+    await toolCall(h, s)
     await stepFinish(h, s, "p1", 0, { ...ZERO_TOKENS, input: 600 })
 
-    const snap = await status(h, s)
-    expect(snap.session.context).toBe(600)
-    expect(snap.session.contextLimit).toBe(1000)
-    expect(snap.recommendation).toBe("handoff")
+    const pressured = await status(h, s)
+    expect(pressured.session.context).toBe(600)
+    expect(pressured.session.contextLimit).toBe(1000)
+    expect(pressured.state).toBe("PRESSURE")
+    expect(pressured.recommendation).toBe("warn")
+
+    await h.event({ event: { type: "session.idle", properties: { sessionID: s } } })
+    const paused = await status(h, s)
+    expect(paused.state).toBe("HANDOFF_RECOMMENDED")
+    expect(paused.recommendation).toBe("handoff")
 
     const warn = await freshPlugin({
       TOKEN_NORM_MODE: "warn",
       TOKEN_NORM_CONTEXT_LIMIT: "1000",
       TOKEN_NORM_CONTEXT_WARN: "0.5",
     })
+    await toolCall(warn, "ses_pressure_warn")
     await stepFinish(warn, "ses_pressure_warn", "p1", 0, { ...ZERO_TOKENS, input: 600 })
     expect((await status(warn, "ses_pressure_warn")).recommendation).toBe("warn")
   })
