@@ -121,6 +121,13 @@ To validate against a compaction in a live session:
 - If the model lookup finds no limit, context pressure stays off by design; set
   `TOKEN_NORM_CONTEXT_LIMIT` explicitly.
 
+Live check (plugin 0.8.0, OpenCode 1.18.30, 2026-09-12): `budget crossing at 2
+calls: context 8.6k/1.0M` (limit from the provider lookup, nothing injected); the
+crossing `used` 8,631 matched `usage-audit.py --session` `first_call_total` and
+that step's `tokens.total` exactly. A step's tokens are persisted only after its
+tool returns, so one tool call can never log a context crossing and the crossing
+always compares against the newest persisted step — record in `compatibility.md`.
+
 ## 9. Kill switches
 
 - `TOKEN_NORM_BUDGET=0`: restart, confirm no counting reminders; the `handoff`

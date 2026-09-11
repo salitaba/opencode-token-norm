@@ -1,7 +1,11 @@
 # Tier 1 Plan — Budgets, Context Pressure, Handoff Recommendations
 
 Status: Tier 1 implemented 2026-09-11 (steps 1-6; 45 tests passing). Step 7
-(observe-mode smoke test) is runtime validation, still pending.
+(observe-mode smoke test) ran 2026-09-12 on plugin 0.8.0: live `budget crossing
+at 2 calls: context 8.6k/1.0M` from the provider-limit lookup, with `used`
+matching that step's `tokens.total` exactly — recorded in docs/compatibility.md.
+The at-compaction comparison remains covered by the offline validation in
+docs/smoke-test.md §8 (a live run cannot reach compaction cheaply).
 Scope: Tier 1 only. Items #4/#5 (tool/phase weights, session analytics) are explicitly deferred — see bottom.
 
 ## Goal
@@ -82,6 +86,7 @@ SDK (`node_modules/@opencode-ai/plugin/dist/index.d.ts`, `@opencode-ai/sdk` gene
 6. Tests: new `test/usage.test.ts` (accumulator math, compaction reset, child rollup, mode
    transitions); extend `test/session-budget.test.ts` using existing mock pattern. Run `npm test`.
 7. Observe-mode smoke test (follow `docs/smoke-test.md`); compare computed context vs `session.compacted`.
+   Done 2026-09-12 (crossing vs the step's DB `tokens.total`; see `docs/compatibility.md`).
 
 ## Locked decisions
 
