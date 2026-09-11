@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-12
+
 ### Fixed
 
 - **Benchmark harness no longer charges the treatment arm for a cold plugin
@@ -23,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`power-string-sweep-v2.jsonl`, 40/40, $0.2923): window **0.158 s vs 0.278 s**
   per arm, wall difference **+2.6 s, p = 0.83** — was +27.4 s, p = 0.018. No
   wall-time separation remains.
+
+- `session.deleted` events missing `info.id`, and user messages missing
+  `sessionID`, no longer throw into the event handler's catch-all (which also
+  skipped handoff arming and the task-boundary check for that event).
 
 ### Changed
 
@@ -74,6 +80,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   what the plugin would actually do -- a handoff has always required a natural
   pause as well.
 
+- `TOKEN_NORM_SETTLE_MS` and `TOKEN_NORM_SWITCH_WAIT_MS` are read in `config.ts`
+  like every other setting, so they are validated and diagnosed too.
+- The opencode client and event payloads are no longer typed as `any`. `src/host.ts`
+  declares narrow interfaces covering only the host fields this plugin actually
+  reads, so a renamed or removed host method now fails at build time instead of
+  disappearing into a runtime catch.
+
 ### Added
 
 - **Release provenance.** Every build writes `dist/provenance.json` recording the
@@ -105,21 +118,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arm) refuting the earlier N=2 `10-string-sweep` hypothesis: tool calls differ
   by -3.05 (p = 0.65) and both arms are bimodal. Wall time is the one metric that
   separates, +27.4 s in the treatment arm (p = 0.018), cause unattributed.
-
-### Changed
-
-- `TOKEN_NORM_SETTLE_MS` and `TOKEN_NORM_SWITCH_WAIT_MS` are read in `config.ts`
-  like every other setting, so they are validated and diagnosed too.
-- The opencode client and event payloads are no longer typed as `any`. `src/host.ts`
-  declares narrow interfaces covering only the host fields this plugin actually
-  reads, so a renamed or removed host method now fails at build time instead of
-  disappearing into a runtime catch.
-
-### Fixed
-
-- `session.deleted` events missing `info.id`, and user messages missing
-  `sessionID`, no longer throw into the event handler's catch-all (which also
-  skipped handoff arming and the task-boundary check for that event).
 
 ## [0.7.2] - 2026-09-11
 
@@ -277,7 +275,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `TokenNormBudget`, which counts tool calls and staples reminders at thresholds, and `TokenNormHandoff`, which collapses the session split into a single tool call.
 
-[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.6.0...v0.7.0
