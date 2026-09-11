@@ -161,7 +161,7 @@ describe("event ordering", () => {
 
     expect(outputs[0]).not.toContain("TOKEN NORM")
     expect(outputs[1]).not.toContain("BUDGET")
-    expect(outputs[3]).toContain("Tool calls: 2 / 2 (100%) -- OVER")
+    expect(outputs[3]).toContain("Weighted tool calls: 2 / 2 (100%) -- OVER")
 
     const snap = await status(hooks, s)
     expect(snap.budget.toolCalls).toBe(2)

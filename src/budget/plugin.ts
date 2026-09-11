@@ -90,7 +90,7 @@ export const SessionBudgetPlugin: Plugin = async ({ client }: BudgetPluginInput 
       pauseArmed: s?.pendingHandoff ?? false,
     })
     return snapshotFrom({
-      toolCalls: rollup.calls,
+      toolCalls: rollup.weightedCalls,
       context: usage.has(sessionID) ? usage.get(sessionID).contextNow : 0,
       contextLimit,
       cost: { used: rollup.costUsd, limit: MAX_COST },

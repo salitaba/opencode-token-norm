@@ -101,6 +101,7 @@ export interface StepPart {
   sessionID?: string
   cost?: number
   tokens?: RawTokens
+  messageID?: string
 }
 
 export interface MessageInfo {
@@ -109,6 +110,7 @@ export interface MessageInfo {
   role?: string
   providerID?: string
   modelID?: string
+  mode?: string
 }
 
 export interface SessionInfo {

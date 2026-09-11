@@ -170,6 +170,8 @@ const TIER1_KEYS = [
   "TOKEN_NORM_MAX_TOOL_CALLS",
   "TOKEN_NORM_CONTEXT_WARN",
   "TOKEN_NORM_CONTEXT_LIMIT",
+  "TOKEN_NORM_TOOL_WEIGHTS",
+  "TOKEN_NORM_PHASE_WEIGHTS",
 ]
 
 async function freshPlugin(env: Record<string, string> = {}): Promise<any> {
@@ -217,10 +219,33 @@ describe("SessionBudgetPlugin tier 1 budgets", () => {
 
     const third = await toolCall(h, s)
     expect(third).toContain("TOKEN NORM -- BUDGET")
-    expect(third).toContain("Tool calls: 3 / 3 (100%) -- OVER")
+    expect(third).toContain("Weighted tool calls: 3 / 3 (100%) -- OVER")
     expect(third).toContain("Crossed now: tool-calls")
 
     expect(await toolCall(h, s)).not.toContain("BUDGET")
+  })
+
+  it("weights budgeted calls by tool and assistant mode, leaving raw counts alone", async () => {
+    const h = await freshPlugin({
+      TOKEN_NORM_MODE: "warn",
+      TOKEN_NORM_MAX_TOOL_CALLS: "5",
+      TOKEN_NORM_TOOL_WEIGHTS: "bash=2,read=0.5",
+      TOKEN_NORM_PHASE_WEIGHTS: "build=2",
+    })
+    const s = "ses_weighted"
+    await h.event({
+      event: {
+        type: "message.updated",
+        properties: { info: { id: "m1", role: "assistant", sessionID: s, mode: "build" } },
+      },
+    })
+
+    const first = await toolCall(h, s, "bash")
+    expect(first).not.toContain("BUDGET")
+
+    const second = await toolCall(h, s, "read")
+    expect(second).toContain("Weighted tool calls: 5 / 5 (100%) -- OVER")
+    expect(second).toContain("Crossed now: tool-calls")
   })
 
   it("observe mode logs the crossing but injects nothing", async () => {

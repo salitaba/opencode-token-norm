@@ -15,6 +15,7 @@
 // output sizes, never presented as provider-measured tokens: bytes are not
 // tokens and chunking means neither one converts linearly into the other.
 
+import { weightOf } from "./config.js"
 import type { NormEvent, RawTokens, StepPart, ToolArgs } from "./host.js"
 
 export interface StepTokens {
@@ -32,6 +33,7 @@ export interface StepUsage {
   /** Prompt + output for this step, i.e. what the window holds right after it. */
   contextAfter: number
   at: number
+  mode?: string
 }
 
 export interface Rollup {
@@ -39,6 +41,7 @@ export interface Rollup {
   effectiveTokens: number
   stepCount: number
   calls: number
+  weightedCalls: number
   sessions: number
 }
 
@@ -51,6 +54,10 @@ export interface SessionUsage {
   stepCount: number
   /** Budgeted tool calls, cheap tools excluded by the caller. */
   calls: number
+  /** `calls` weighted by tool and latest assistant mode. */
+  weightedCalls: number
+  mode?: string
+  messageModes: Map<string, string>
   contextNow: number
   contextPeak: number
   providerID?: string
@@ -91,6 +98,7 @@ const HISTORY_MAX = 100
 const SEEN_PARTS_MAX = 500
 const EDITED_MAX = 100
 const RECENT_EDITS_MAX = 20
+const MESSAGE_MODES_MAX = 200
 // Deleted ids are remembered exactly for a bounded window; the cap keeps that
 // suppression window from becoming a second ledger.
 const DELETED_MAX = 500
@@ -205,6 +213,14 @@ function pushCapped<T>(list: T[], value: T, max: number): void {
   if (list.length > max) list.splice(0, list.length - max)
 }
 
+function setCapped<K, V>(map: Map<K, V>, key: K, value: V, max: number): void {
+  map.set(key, value)
+  if (map.size > max) {
+    const oldest = map.keys().next().value
+    if (oldest !== undefined) map.delete(oldest)
+  }
+}
+
 function normalizeTokens(tokens: RawTokens | undefined): StepTokens {
   return {
     input: tokens?.input ?? 0,
@@ -222,6 +238,8 @@ function empty(sessionID: string): SessionUsage {
     effectiveTokens: 0,
     stepCount: 0,
     calls: 0,
+    weightedCalls: 0,
+    messageModes: new Map(),
     contextNow: 0,
     contextPeak: 0,
     history: [],
@@ -241,6 +259,7 @@ function fold(target: Rollup | undefined, s: SessionUsage): Rollup {
     effectiveTokens: s.effectiveTokens,
     stepCount: s.stepCount,
     calls: s.calls,
+    weightedCalls: s.weightedCalls,
     sessions: 1,
   }
   for (const part of [s.folded, target]) {
@@ -249,6 +268,7 @@ function fold(target: Rollup | undefined, s: SessionUsage): Rollup {
     out.effectiveTokens += part.effectiveTokens
     out.stepCount += part.stepCount
     out.calls += part.calls
+    out.weightedCalls += part.weightedCalls
     out.sessions += part.sessions
   }
   return out
@@ -315,7 +335,10 @@ export class UsageTracker {
     if (this.suppressed(sessionID)) return
     const s = this.get(sessionID)
     s.lastTool = tool
-    if (budgeted) s.calls++
+    if (budgeted) {
+      s.calls++
+      s.weightedCalls += weightOf(tool, s.mode)
+    }
     const bytes = typeof output?.output === "string" ? Buffer.byteLength(output.output) : 0
     if (bytes > 0) s.bytesByTool.set(tool, (s.bytesByTool.get(tool) ?? 0) + bytes)
 
@@ -375,6 +398,10 @@ export class UsageTracker {
         const s = this.get(info.sessionID)
         if (typeof info.providerID === "string") s.providerID = info.providerID
         if (typeof info.modelID === "string") s.modelID = info.modelID
+        if (typeof info.mode === "string") {
+          s.mode = info.mode
+          if (typeof info.id === "string") setCapped(s.messageModes, info.id, info.mode, MESSAGE_MODES_MAX)
+        }
       }
       return
     }
@@ -423,6 +450,7 @@ export class UsageTracker {
 
     const tokens = normalizeTokens(part.tokens)
     const contextAfter = tokens.input + tokens.cache.read + tokens.cache.write + tokens.output
+    const mode = (part.messageID !== undefined ? s.messageModes.get(part.messageID) : undefined) ?? s.mode
     if (s.contextNow > 0 && contextAfter > s.contextNow) {
       pushCapped(s.deltas, contextAfter - s.contextNow, HISTORY_MAX)
     }
@@ -433,7 +461,7 @@ export class UsageTracker {
     if (contextAfter > s.contextPeak) s.contextPeak = contextAfter
     pushCapped(
       s.history,
-      { partID, cost: part.cost ?? 0, effective: effectiveFresh(tokens), tokens, contextAfter, at: Date.now() },
+      { partID, cost: part.cost ?? 0, effective: effectiveFresh(tokens), tokens, contextAfter, at: Date.now(), mode },
       HISTORY_MAX,
     )
   }
@@ -507,6 +535,7 @@ export class UsageTracker {
     let effectiveTokens = 0
     let stepCount = 0
     let calls = 0
+    let weightedCalls = 0
     const ids = this.descendants(sessionID)
     let sessions = 0
     for (const id of ids) {
@@ -517,8 +546,9 @@ export class UsageTracker {
       effectiveTokens += s.effectiveTokens + (f?.effectiveTokens ?? 0)
       stepCount += s.stepCount + (f?.stepCount ?? 0)
       calls += s.calls + (f?.calls ?? 0)
+      weightedCalls += s.weightedCalls + (f?.weightedCalls ?? 0)
       sessions += 1 + (f?.sessions ?? 0)
     }
-    return { costUsd, effectiveTokens, stepCount, calls, sessions }
+    return { costUsd, effectiveTokens, stepCount, calls, weightedCalls, sessions }
   }
 }

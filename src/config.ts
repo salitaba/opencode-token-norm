@@ -102,6 +102,35 @@ function cheapTools(): Set<string> {
 
 export const CHEAP_TOOLS = cheapTools()
 
+/** `name=weight` comma lists. The name is a tool id or an assistant mode; an
+ * unlisted name weighs 1, and a malformed entry is dropped and reported. */
+function weightList(name: string): Map<string, number> {
+  const raw = env(name)
+  const out = new Map<string, number>()
+  if (raw === undefined) return out
+  for (const entry of raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)) {
+    const eq = entry.indexOf("=")
+    const key = eq > 0 ? entry.slice(0, eq).trim() : ""
+    const value = Number(entry.slice(eq + 1).trim())
+    if (!key || !Number.isFinite(value) || value <= 0) {
+      reject(name, entry, "expected name=weight with a positive weight", "weight 1")
+      continue
+    }
+    out.set(key, value)
+  }
+  return out
+}
+
+export const TOOL_WEIGHTS = weightList("TOKEN_NORM_TOOL_WEIGHTS")
+export const PHASE_WEIGHTS = weightList("TOKEN_NORM_PHASE_WEIGHTS")
+
+export function weightOf(tool: string, mode: string | undefined): number {
+  return (TOOL_WEIGHTS.get(tool) ?? 1) * (PHASE_WEIGHTS.get(mode ?? "") ?? 1)
+}
+
 const DATA_HOME = process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share")
 
 export const HANDOFF_DIR = env("TOKEN_NORM_HANDOFF_DIR") || path.join(DATA_HOME, "opencode", "handoff")

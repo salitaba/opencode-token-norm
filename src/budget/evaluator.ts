@@ -71,8 +71,8 @@ export function budgetMetrics(sessionID: string, rollup: Rollup, contextLimit: n
   if (MAX_TOOL_CALLS !== undefined) {
     metrics.push({
       key: "tool-calls",
-      label: "Tool calls",
-      used: rollup.calls,
+      label: "Weighted tool calls",
+      used: rollup.weightedCalls,
       limit: MAX_TOOL_CALLS,
       warnAt: MAX_TOOL_CALLS,
       format: fmtCount,

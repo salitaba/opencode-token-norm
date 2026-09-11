@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+
+vi.hoisted(() => {
+  process.env.TOKEN_NORM_TOOL_WEIGHTS = "bash=2,read=0.5"
+  process.env.TOKEN_NORM_PHASE_WEIGHTS = "plan=0.5,build=2"
+})
+
 import { UsageTracker, effectiveFresh, median, bloat, attribution, type StepTokens } from "../src/usage.js"
 
 type PartialSteps = Omit<Partial<StepTokens>, "cache"> & { cache?: Partial<StepTokens["cache"]> }
@@ -19,10 +25,18 @@ function step(
   sessionID: string,
   t: PartialSteps = {},
   cost = 0,
+  messageID?: string,
 ): void {
   tracker.handleEvent({
     type: "message.part.updated",
-    properties: { part: { id: partID, sessionID, type: "step-finish", cost, tokens: tokens(t) } },
+    properties: { part: { id: partID, sessionID, type: "step-finish", cost, tokens: tokens(t), messageID } },
+  })
+}
+
+function assistantMessage(tracker: UsageTracker, sessionID: string, id: string, mode: string): void {
+  tracker.handleEvent({
+    type: "message.updated",
+    properties: { info: { id, role: "assistant", sessionID, mode } },
   })
 }
 
@@ -78,14 +92,26 @@ describe("UsageTracker step accumulation", () => {
     expect(tracker.get("ses_a").history).toHaveLength(3)
   })
 
-  it("captures provider/model from assistant messages", () => {
+  it("captures provider/model and the latest mode from assistant messages", () => {
     const tracker = new UsageTracker()
     tracker.handleEvent({
       type: "message.updated",
-      properties: { info: { role: "assistant", sessionID: "ses_a", providerID: "anthropic", modelID: "claude" } },
+      properties: {
+        info: { role: "assistant", sessionID: "ses_a", providerID: "anthropic", modelID: "claude", mode: "build" },
+      },
     })
     expect(tracker.get("ses_a").providerID).toBe("anthropic")
     expect(tracker.get("ses_a").modelID).toBe("claude")
+    expect(tracker.get("ses_a").mode).toBe("build")
+  })
+
+  it("stamps each step's mode from its message, falling back to the latest", () => {
+    const tracker = new UsageTracker()
+    assistantMessage(tracker, "ses_a", "m1", "build")
+    assistantMessage(tracker, "ses_a", "m2", "plan")
+    step(tracker, "p1", "ses_a", { input: 1 }, 0, "m1")
+    step(tracker, "p2", "ses_a", { input: 1 }, 0, "unknown")
+    expect(tracker.get("ses_a").history.map((h) => h.mode)).toEqual(["build", "plan"])
   })
 
   it("swallows malformed events", () => {
@@ -124,12 +150,28 @@ describe("child rollup", () => {
     expect(tracker.rollup("ses_root").calls).toBe(2)
   })
 
+  it("weights budgeted calls by tool and latest mode across the tree", () => {
+    const tracker = new UsageTracker()
+    child(tracker, "ses_child", "ses_root")
+    assistantMessage(tracker, "ses_root", "m1", "build")
+    assistantMessage(tracker, "ses_child", "m2", "plan")
+    tracker.noteToolCall("ses_root", "bash", {}, { output: "x" }, true)
+    tracker.noteToolCall("ses_root", "read", {}, { output: "x" }, true)
+    tracker.noteToolCall("ses_child", "read", {}, { output: "x" }, true)
+    tracker.noteToolCall("ses_child", "todowrite", {}, { output: "x" }, false)
+
+    const r = tracker.rollup("ses_root")
+    expect(r.calls).toBe(3)
+    expect(r.weightedCalls).toBeCloseTo(2 * 2 + 0.5 * 2 + 0.5 * 0.5)
+  })
+
   it("folds deleted sessions into the parent instead of keeping tombstones", () => {
     const tracker = new UsageTracker()
     child(tracker, "ses_child", "ses_root")
     child(tracker, "ses_grand", "ses_child")
     step(tracker, "c1", "ses_child", { input: 500 }, 0.5)
     step(tracker, "g1", "ses_grand", { input: 200 }, 0.2)
+    assistantMessage(tracker, "ses_child", "mc", "build")
     tracker.noteToolCall("ses_child", "read", { filePath: "/repo/a.ts" }, { output: "aaaa" }, true)
 
     tracker.handleEvent({ type: "session.deleted", properties: { info: { id: "ses_child" } } })
@@ -141,6 +183,7 @@ describe("child rollup", () => {
     expect(tracker.rollup("ses_root").sessions).toBe(3)
     expect(tracker.rollup("ses_root").costUsd).toBeCloseTo(0.7)
     expect(tracker.rollup("ses_root").calls).toBe(1)
+    expect(tracker.rollup("ses_root").weightedCalls).toBeCloseTo(1)
 
     // Late zombie events are swallowed: they neither add spend nor re-create
     // a ledger entry, and a stale session.updated cannot re-parent one.
@@ -149,6 +192,7 @@ describe("child rollup", () => {
     tracker.handleEvent({ type: "session.updated", properties: { info: { id: "ses_child", parentID: "ses_root" } } })
     expect(tracker.rollup("ses_root").costUsd).toBeCloseTo(0.7)
     expect(tracker.rollup("ses_root").calls).toBe(1)
+    expect(tracker.rollup("ses_root").weightedCalls).toBeCloseTo(1)
     expect(tracker.has("ses_child")).toBe(false)
   })
 

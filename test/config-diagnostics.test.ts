@@ -21,6 +21,8 @@ const TOUCHED = [
   "TOKEN_NORM_CONTEXT_WARN",
   "TOKEN_NORM_CONTEXT_LIMIT",
   "TOKEN_NORM_CHEAP_TOOLS",
+  "TOKEN_NORM_TOOL_WEIGHTS",
+  "TOKEN_NORM_PHASE_WEIGHTS",
   "TOKEN_NORM_BUDGET",
   "TOKEN_NORM_HANDOFF",
   "TOKEN_NORM_SETTLE_MS",
@@ -113,6 +115,21 @@ describe("config diagnostics", () => {
     const [d] = cfg.takeConfigDiagnostics()
     expect(d).toMatchObject({ name: "TOKEN_NORM_CHEAP_TOOLS", using: "todowrite,question,skill" })
     expect([...cfg.CHEAP_TOOLS]).toEqual(["todowrite", "question", "skill"])
+  })
+
+  it("reports malformed tool-weight entries and keeps the well-formed ones", async () => {
+    const cfg = await freshConfig({ TOKEN_NORM_TOOL_WEIGHTS: "bash=2,read=nope,=3,glob=0" })
+    const diags: any[] = cfg.takeConfigDiagnostics()
+    expect(diags).toHaveLength(3)
+    expect(diags.every((d) => d.name === "TOKEN_NORM_TOOL_WEIGHTS" && d.using === "weight 1")).toBe(true)
+    expect([...cfg.TOOL_WEIGHTS]).toEqual([["bash", 2]])
+  })
+
+  it("reports a malformed phase weight while keeping the parsed pair", async () => {
+    const cfg = await freshConfig({ TOKEN_NORM_PHASE_WEIGHTS: "plan=0.5,build" })
+    const [d] = cfg.takeConfigDiagnostics()
+    expect(d).toMatchObject({ name: "TOKEN_NORM_PHASE_WEIGHTS", raw: "build", using: "weight 1" })
+    expect([...cfg.PHASE_WEIGHTS]).toEqual([["plan", 0.5]])
   })
 
   it("reports an unknown TOKEN_NORM_* key as a probable typo", async () => {

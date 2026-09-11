@@ -94,4 +94,7 @@ SDK (`node_modules/@opencode-ai/plugin/dist/index.d.ts`, `@opencode-ai/sdk` gene
 - Single token/cost source: `StepFinishPart`.
 - Attribution always labeled estimated.
 - `handoff` mode recommends; it never switches sessions or calls the handoff tool itself.
-- Phase/tool-weight budgets and JSONL analytics are deferred until after Tier 1 ships.
+- Phase/tool-weight budgets (item #4) shipped 2026-09-12: `TOKEN_NORM_TOOL_WEIGHTS` /
+  `TOKEN_NORM_PHASE_WEIGHTS` weight the `MAX_TOOL_CALLS` metric only; see
+  `docs/configuration.md` and `docs/tier1-deferred-plan.md` Task A. JSONL analytics
+  (item #5) remains deferred.

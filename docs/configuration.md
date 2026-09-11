@@ -25,9 +25,24 @@ paths, path-adjacent tunings, and kill switches you will probably never touch.
 |---|---|---|
 | `TOKEN_NORM_MAX_COST` | unset | USD budget from provider cost |
 | `TOKEN_NORM_MAX_EFFECTIVE_TOKENS` | unset | Fresh-token budget (input + 0.1×cache read + 1.25×cache write) |
-| `TOKEN_NORM_MAX_TOOL_CALLS` | unset | Budgeted tool calls; cheap tools excluded |
+| `TOKEN_NORM_MAX_TOOL_CALLS` | unset | Weighted tool calls; cheap tools excluded |
+| `TOKEN_NORM_TOOL_WEIGHTS` | unset | `name=weight` list overriding the weight of individual tools |
+| `TOKEN_NORM_PHASE_WEIGHTS` | unset | `name=weight` list by assistant mode (`plan`, `build`, ...) |
 | `TOKEN_NORM_CONTEXT_WARN` | `0.8` | Fraction of the context window that counts as pressure |
 | `TOKEN_NORM_CONTEXT_LIMIT` | model limit | Override the window size in tokens (bypasses the cached model lookup) |
+
+Only `TOKEN_NORM_MAX_TOOL_CALLS` is weighted: raw call counts still drive the
+announce, audit, and task-boundary thresholds and the policy's call-count axis,
+so weights can never delay or advance a reminder. A budgeted call contributes
+`TOOL_WEIGHTS.get(tool) ?? 1` times `PHASE_WEIGHTS.get(latest assistant mode) ?? 1`,
+and cheap tools contribute nothing. For example, to make `bash` twice as
+expensive while halving what planning-mode calls cost:
+
+```sh
+TOKEN_NORM_MAX_TOOL_CALLS=200 TOKEN_NORM_TOOL_WEIGHTS=bash=2,read=0.5 TOKEN_NORM_PHASE_WEIGHTS=plan=0.5
+```
+
+Unlisted tools and modes weigh `1`, so the variables only need the exceptions.
 
 ### Operational (paths, paths-adjacent, switches)
 
@@ -74,5 +89,6 @@ config: TOKEN_NORM_MODE="blocking" ignored -- expected one of observe, warn, han
 Reported cases: a non-numeric or non-positive threshold or budget, a
 `TOKEN_NORM_CONTEXT_WARN` outside `0`-`1`, a kill switch set to anything but
 `0` or `1` (`false` and `off` do *not* disable a half), an empty
-`TOKEN_NORM_CHEAP_TOOLS`, and any unrecognized `TOKEN_NORM_*` variable, which is
+`TOKEN_NORM_CHEAP_TOOLS`, a malformed `name=weight` entry (that entry alone is
+dropped and weighs `1`), and any unrecognized `TOKEN_NORM_*` variable, which is
 almost always a misspelling of a real one.

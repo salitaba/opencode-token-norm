@@ -4,12 +4,13 @@
 // Both are in-memory only: a restarted server starts from zero, and deleting a
 // session evicts only its activity entry (the usage ledger is separate).
 
-import { CHEAP_TOOLS } from "../config.js"
+import { CHEAP_TOOLS, weightOf } from "../config.js"
 import { UsageTracker } from "../usage.js"
 import type { PolicyState } from "./policy.js"
 
 export interface SessionState {
   calls: number
+  weightedCalls: number
   announced: boolean
   lastAudit: number
   tools: Map<string, number>
@@ -53,6 +54,7 @@ export function track(sessionID: string, tool: string): SessionState {
   if (!s) {
     s = {
       calls: 0,
+      weightedCalls: 0,
       announced: false,
       lastAudit: 0,
       tools: new Map(),
@@ -65,7 +67,10 @@ export function track(sessionID: string, tool: string): SessionState {
     }
     state.set(sessionID, s)
   }
-  if (!CHEAP_TOOLS.has(tool)) s.calls++
+  if (!CHEAP_TOOLS.has(tool)) {
+    s.calls++
+    s.weightedCalls += weightOf(tool, usage.get(sessionID).mode)
+  }
   s.tools.set(tool, (s.tools.get(tool) ?? 0) + 1)
   return s
 }
