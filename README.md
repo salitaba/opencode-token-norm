@@ -65,10 +65,20 @@ npx opencode-token-norm
 
 Restart OpenCode. The command copies a self-contained build into
 `~/.config/opencode/plugins/` and the audit script into
-`~/.config/opencode/scripts/`; uninstall with `npx opencode-token-norm uninstall`.
-Requires Node ≥ 22 and an OpenCode build with plugin support; `python3` is
-optional, used for the audit checkpoint only. Requirements, verification, and
-troubleshooting are in the
+`~/.config/opencode/scripts/` — nothing outside `~/.config/opencode` is touched.
+Two commands make that checkable rather than trusted:
+
+```sh
+npx opencode-token-norm --dry-run   # every path it would write, writes nothing
+npx opencode-token-norm doctor      # is it installed, current, and configured?
+```
+
+`doctor` exits non-zero only when the plugin is not working; a missing `python3`
+is a warning, because audits are optional and nothing else depends on it. It also
+hashes the installed file against the one in the package, which is the only way to
+tell a current install from a stale copy. Uninstall with
+`npx opencode-token-norm uninstall`. Requires Node ≥ 22 and an OpenCode build with
+plugin support. Requirements, verification, and troubleshooting are in the
 [install notes](https://github.com/salitaba/opencode-token-norm/blob/main/docs/install.md).
 
 | Node | OpenCode | `@opencode-ai/plugin` | Token Norm |
@@ -145,7 +155,9 @@ into `AGENTS.md`, in context for the whole session, and then 184 tool calls and
 - **On-demand status.** `token_norm_status` returns tool calls, context, cost and
   effective-token usage plus `policy.current` (severity now), `policy.peak`
   (severity ever), `policy.driver` (which axis) and the
-  `continue | warn | handoff | block` recommendation, as read-only JSON.
+  `continue | warn | handoff | block` recommendation, as read-only JSON. The
+  payload is a **public interface**: stable field names within a major version,
+  `peak` never below `current`, and reading it never changes it.
   [payload and fields](https://github.com/salitaba/opencode-token-norm/blob/main/docs/how-it-works.md#the-payload)
 
 **Two call counts, on purpose.** Raw per-session calls drive the behavioral

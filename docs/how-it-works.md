@@ -232,6 +232,15 @@ plugin, so it is absent when that plugin is not loaded.
 
 ### The payload
 
+**This payload is a public interface.** Other tools may read it. Within a major
+version: existing fields keep their names, types and meaning; new fields may be
+added; a removed field is first kept as a documented alias (see `state`) and only
+dropped in a major bump. `null` means "not configured" and never "zero". Two
+guarantees a consumer can rely on without reading the source: `peak` is always at
+least as severe as `current`, and reading this payload never changes it — status
+is free of side effects, so polling it cannot latch a severity or consume a
+crossing.
+
 ```json
 {
   "session": { "scope": "current-session", "context": 8631, "contextLimit": 1000000 },

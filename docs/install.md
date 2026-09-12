@@ -8,6 +8,22 @@ Restart OpenCode. That is the whole install — the command copies a self-contai
 build into `~/.config/opencode/plugins/` and the audit script into
 `~/.config/opencode/scripts/`. Uninstall with `npx opencode-token-norm uninstall`.
 
+To see exactly which paths would be written before anything is, add `--dry-run`
+(it also works on `uninstall`):
+
+```console
+$ npx opencode-token-norm --dry-run
+Token Norm install plan
+
+  plugin       create  ~/.config/opencode/plugins/opencode-token-norm.js
+  audit script create  ~/.config/opencode/scripts/usage-audit.py
+
+No files outside ~/.config/opencode are created, modified, or removed.
+Nothing is added to your shell profile, PATH, or opencode config.
+
+--dry-run: nothing was written.
+```
+
 It installs as a local plugin file rather than an npm plugin entry because
 OpenCode builds ≥ 1.17 can silently never initialize npm-spec plugins
 ([#48379](https://github.com/anomalyco/opencode/issues/48379)); once that is
@@ -34,8 +50,41 @@ behind these claims.
 ## Check it loaded
 
 Nothing surfaces until call 25, so a silent install looks like a working one.
-Thresholds are logged; an empty log after a short session means nothing crossed
-one, not that the plugin is missing:
+`doctor` answers the question directly:
+
+```console
+$ npx opencode-token-norm doctor
+Token Norm doctor
+
+  ✓ node              22.14.0
+  ✓ opencode          1.18.30
+  ✓ package bundle    0.11.0 at .../dist/plugin.js
+  ✓ plugin installed  ~/.config/opencode/plugins/opencode-token-norm.js (matches this package)
+  ✓ audit script      ~/.config/opencode/scripts/usage-audit.py
+  ✓ settings          mode=warn, announce@25 boundary@40 audit@60
+  ✓ python3           Python 3.12.3
+  ✓ opencode db       ~/.local/share/opencode/opencode.db (read-only access)
+  ✓ config            no duplicate plugin registration
+
+Status: ready
+```
+
+It exits non-zero only when the plugin is **not working** — a missing bundle, a
+Node too old, no plugin installed. Everything you may have chosen on purpose is a
+warning that still exits 0: no `python3` (audits skipped, nothing else affected),
+no OpenCode on `PATH`, no DB yet. Two checks are worth knowing about:
+
+- **`plugin installed … matches this package`** compares the sha256 of the
+  installed file against the bundle in the package. A copied loose file has no
+  registry integrity story behind it, so this is the only way to tell a current
+  install from a stale one left by an older version. `differs from this package`
+  means rerun the install to update.
+- **`settings`** is read through the plugin's own config parser, not a second copy
+  of the key list, so it reports the same rejections and typo warnings the plugin
+  will actually apply — including `TOKEN_NORM_*` keys that are not real settings.
+
+Thresholds are also logged; an empty log after a short session means nothing
+crossed one, not that the plugin is missing:
 
 ```console
 $ tail ~/.local/share/opencode/token-norm.log
@@ -52,11 +101,10 @@ In order of likelihood:
 - `npx` unavailable, or the registry is blocked — `npm i -g opencode-token-norm`
   then run `opencode-token-norm`, or `npm i opencode-token-norm` in a project and
   run `npx opencode-token-norm` from there.
-- Nothing appears after a restart — confirm
-  `~/.config/opencode/plugins/opencode-token-norm.js` exists, then work through
-  the [smoke test](smoke-test.md). If `opencode.json` still lists
-  `opencode-token-norm` under `plugin`, remove that entry — a future fixed
-  runtime would otherwise load it twice.
+- Nothing appears after a restart — run `npx opencode-token-norm doctor` first; it
+  checks the installed file, the audit script, your settings and the duplicate
+  registration in one pass. If it reports `Status: ready`, work through the
+  [smoke test](smoke-test.md).
 - Developing on the plugin itself? After `npm run build`,
   `npm run install:local` rebuilds the bundle and reinstalls it.
 
