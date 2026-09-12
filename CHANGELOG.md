@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-12
+
+### Added
+
+- **`doctor` command.** `node scripts/install-local.mjs doctor` runs nine checks
+  against a live install: Node >= 22, `opencode --version`, the package bundle
+  being present, the sha256 of the installed plugin against `dist/plugin.js`,
+  the audit script being readable, the settings (imported from `dist/config.js`
+  via `takeConfigDiagnostics()`), `python3`, the OpenCode database being
+  readable, and duplicate plugin registration in `opencode.json`. It exits 1
+  only on a `fail`; a `warn` is reported and still exits 0, so it can gate a
+  script without failing on the merely unusual.
+- **`--dry-run` on `install` and `uninstall`.** Prints the file operations that
+  would run and touches nothing. The preview and the real run read the same
+  `plan()`, so the two cannot drift. The argv parse was rewritten to filter
+  `--` flags rather than reading `process.argv[2]`, which is what makes
+  `uninstall --dry-run` work rather than being read as an unknown command.
+
+### Documentation
+
+- **The `token_norm_status` payload is declared a public interface.** Stable
+  within a major version, `peak >= current` always, and reads are
+  side-effect-free — stated in `docs/how-it-works.md` above the payload example
+  and in the README. No field changed; this documents the existing contract.
+- `docs/install.md` shows a `--dry-run` example and replaces the "check it
+  loaded" section with annotated `doctor` output, explaining what the sha256
+  and settings checks actually prove.
+
+### Internal
+
+- 29 new tests. `test/contract.test.ts` is new and asserts behavioral
+  contracts through the plugin hooks: a throwing audit, a throwing toast, an
+  async-rejecting toast and an exploding provider all leave the tool call
+  intact; compaction recovery drops `current` to `HEALTHY` while `peak` holds
+  `PRESSURE`; status reads never latch the peak; block mode keeps the handoff
+  and cheap tools open even at 50000x over limit; and pressure alone never
+  blocks. `test/install-local.test.ts` grew to 15 tests covering the new
+  command surface, including exit codes.
+
 ## [0.10.0] - 2026-09-12
 
 ### Added
@@ -338,7 +377,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `TokenNormBudget`, which counts tool calls and staples reminders at thresholds, and `TokenNormHandoff`, which collapses the session split into a single tool call.
 
-[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/salitaba/opencode-token-norm/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/salitaba/opencode-token-norm/compare/v0.7.2...v0.8.0
